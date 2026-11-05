@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "WheelDay" ALTER COLUMN "distanceMm" DROP NOT NULL,
+ALTER COLUMN "workUnits" DROP NOT NULL;

@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body { background: #0b0b0d; color: #e6e6ec; height: 100%; }
+body { font-family: var(--font-voice), system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+:focus-visible { outline: 2px solid #f2c230; outline-offset: 2px; }
+.dot-grid { background-image: radial-gradient(#26262f 1px, transparent 1px); background-size: 14px 14px; }
+.scrollbar-thin { scrollbar-width: thin; scrollbar-color: #26262f transparent; }
+.label { font-family: var(--font-data), monospace; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #82828f; }
+.title { font-family: var(--font-display), sans-serif; font-weight: 600; letter-spacing: .01em; line-height: 1.05; }
+.btn { flex-shrink: 0; font-family: var(--font-data), monospace; font-size: 12px; border: 1px solid #26262f; background: #1a1a20; color: #e6e6ec; padding: .5rem .75rem; border-radius: 2px; transition: border-color .15s, color .15s; cursor: pointer; }
+.btn:hover:not(:disabled) { border-color: #f2c230; color: #f2c230; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn-gold { background: #f2c230; color: #0b0b0d; border-color: #f2c230; font-weight: 600; }
+.btn-gold:hover:not(:disabled) { background: #ffc048; color: #0b0b0d; border-color: #ffc048; }
+.field { width: 100%; min-width: 0; background: #0f0f12; border: 1px solid #26262f; color: #e6e6ec; padding: .55rem .7rem; font-size: 14px; border-radius: 2px; }
+.field:focus { border-color: #f2c230; outline: none; }
+.card { background: #0f0f12; border: 1px solid #26262f; border-radius: 2px; }
+.pre-wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: reduce) { *, ::before, ::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }

@@ -1,0 +1,362 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Official records. The app only ever inserts these; corrections go in RecordCorrection. ───
+
+/// One reporting history. The team resets these between releases, so every record belongs to one.
+model Installation {
+  id               String    @id
+  releaseId        String?
+  coreAddress      String?
+  deploymentBlock  BigInt?
+  genesisTimestamp BigInt?
+  firstSeenAt      DateTime  @default(now())
+  lastSeenAt       DateTime  @default(now())
+  /// Totals last seen by this archive. A note about what was observed, not a claim about the final state.
+  lastTotals       Json?
+  events           HistoricalEvent[]
+  settlements      SettlementRecord[]
+  blocks           BlockRecord[]
+  mining           MiningRecord[]
+  wheelDays        WheelDay[]
+  milestones       Milestone[]
+}
+
+model DataSource {
+  key           String    @id
+  status        String    @default("unknown") // ok | unavailable | schema_mismatch | error | unknown
+  reason        String?
+  schemaVersion String?
+  lastSuccessAt DateTime?
+  lastErrorAt   DateTime?
+  failureCount  Int       @default(0)
+  updatedAt     DateTime  @updatedAt
+}
+
+model IngestionCursor {
+  key       String   @id
+  value     String?
+  meta      Json?
+  updatedAt DateTime @updatedAt
+}
+
+/// The last response that passed validation, per source. What the world shows during an outage.
+model LastGoodState {
+  key       String   @id
+  body      Json
+  fetchedAt DateTime
+}
+
+model EventCategory {
+  slug   String            @id
+  label  String
+  group  String
+  events HistoricalEvent[]
+}
+
+model HistoricalEvent {
+  id                 String        @id
+  installationId     String
+  installation       Installation  @relation(fields: [installationId], references: [id])
+  type               String
+  eventVersion       Int
+  categorySlug       String
+  category           EventCategory @relation(fields: [categorySlug], references: [slug])
+  title              String
+  summary            String
+  significance       Int           @default(1)
+  occurredAt         DateTime
+  recordedAt         DateTime
+  sourceKind         String // chain | measurement | archive
+  provisional        Boolean       @default(false)
+  confirmationStatus String
+  transactionHash    String?
+  blockNumber        BigInt?
+  blockHash          String?
+  logIndex           Int?
+  contractAddress    String?
+  sourceRef          String?
+  payload            Json
+  searchText         String
+  ingestedAt         DateTime      @default(now())
+  milestones         Milestone[]
+
+  @@index([occurredAt(sort: Desc), id])
+  @@index([categorySlug, occurredAt(sort: Desc)])
+  @@index([type])
+  @@index([transactionHash])
+  @@index([significance, occurredAt(sort: Desc)])
+}
+
+model RecordCorrection {
+  id        String   @id @default(cuid())
+  recordType String
+  recordId  String
+  field     String
+  oldValue  String?
+  newValue  String?
+  reason    String
+  source    String
+  createdAt DateTime @default(now())
+
+  @@index([recordType, recordId])
+}
+
+model SettlementRecord {
+  id                 String        @id // transactionHash:logIndex
+  installationId     String
+  installation       Installation  @relation(fields: [installationId], references: [id])
+  transactionHash    String
+  logIndex           Int
+  ethereumBlockNumber BigInt
+  occurredAt         DateTime
+  previousRound      BigInt
+  settledThroughRound BigInt
+  activeRoundCount   Int
+  workAdded          BigInt?
+  cumulativeWork     BigInt
+  cumulativeBlockUnits Decimal      @db.Decimal(40, 0)
+  blockHeight        BigInt
+  firstCompletedBlock BigInt?
+  lastCompletedBlock BigInt?
+  completedBlockCount BigInt
+  sqkMintedBaseUnits Decimal?      @db.Decimal(78, 0)
+  confirmationStatus String
+  source             String // api | chain
+  blocks             BlockRecord[]
+
+  @@unique([installationId, settledThroughRound])
+  @@index([occurredAt(sort: Desc)])
+}
+
+model BlockRecord {
+  installationId String
+  installation   Installation     @relation(fields: [installationId], references: [id])
+  height         BigInt
+  settlementId   String
+  settlement     SettlementRecord @relation(fields: [settlementId], references: [id])
+  completedAt    DateTime
+
+  @@id([installationId, height])
+  @@index([height(sort: Desc)])
+  @@index([settlementId])
+}
+
+/// A confirmed snapshot of the protocol's totals, taken each time the safe block moves. Evolution charts read these.
+model MiningRecord {
+  id                   String       @id @default(cuid())
+  installationId       String
+  installation         Installation @relation(fields: [installationId], references: [id])
+  capturedAt           DateTime
+  safeBlock            BigInt
+  blockHeight          BigInt
+  cumulativeWork       BigInt
+  workPerThousandBlocks Int
+  settledThroughRound  BigInt
+  mintedBaseUnits      Decimal?     @db.Decimal(78, 0)
+  liveSupplyBaseUnits  Decimal?     @db.Decimal(78, 0)
+  stakedBaseUnits      Decimal?     @db.Decimal(78, 0)
+  nftLive              Int?
+  nftBurned            Int?
+
+  @@unique([installationId, settledThroughRound])
+  @@index([capturedAt])
+}
+
+model WheelDay {
+  installationId String
+  installation   Installation @relation(fields: [installationId], references: [id])
+  date           String
+  /// Null means the source had no reading for this day. It doesn't mean zero.
+  distanceMm     BigInt?
+  workUnits      BigInt?
+  coverageBps    Int
+  buckets        Json
+  updatedAt      DateTime     @updatedAt
+
+  @@id([installationId, date])
+}
+
+model Milestone {
+  key            String       @id
+  installationId String
+  installation   Installation @relation(fields: [installationId], references: [id])
+  kind           String
+  title          String
+  description    String
+  value          String
+  achievedAt     DateTime
+  eventId        String?
+  event          HistoricalEvent? @relation(fields: [eventId], references: [id])
+  createdAt      DateTime     @default(now())
+
+  @@index([achievedAt(sort: Desc)])
+}
+
+// ─── Community. Nothing below can write to the tables above. ───
+
+model User {
+  id            String    @id @default(cuid())
+  username      String    @unique
+  usernameLower String    @unique
+  passwordHash  String?
+  walletAddress String?   @unique
+  role          String    @default("member") // member | moderator
+  bannedAt      DateTime?
+  createdAt     DateTime  @default(now())
+  profile       UserProfile?
+  sessions      Session[]
+  memories      CommunityMemory[]
+  comments      Comment[]
+  reactions     Reaction[]
+  polls         Poll[]
+  votes         PollVote[]
+  contributions UserContribution[]
+  reports       ModerationReport[] @relation("reporter")
+}
+
+model UserProfile {
+  userId String @id
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bio    String @default("")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model WalletChallenge {
+  nonce     String    @id
+  address   String
+  message   String
+  expiresAt DateTime
+  usedAt    DateTime?
+}
+
+model CommunityMemory {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  subject   String // event:<id> | block:<height>
+  kind      String   @default("memory") // memory | observation | expectation
+  body      String
+  status    String   @default("visible") // visible | hidden
+  createdAt DateTime @default(now())
+
+  @@index([subject, status, createdAt(sort: Desc)])
+  @@index([kind, status, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
+}
+
+model Comment {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  subject   String
+  parentId  String?
+  parent    Comment?  @relation("thread", fields: [parentId], references: [id])
+  replies   Comment[] @relation("thread")
+  body      String
+  status    String    @default("visible")
+  createdAt DateTime  @default(now())
+
+  @@index([subject, status, createdAt])
+  @@index([status, createdAt(sort: Desc)])
+}
+
+model Reaction {
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  subject   String
+  kind      String
+  createdAt DateTime @default(now())
+
+  @@id([userId, subject, kind])
+  @@index([subject, kind])
+}
+
+model Poll {
+  id        String       @id @default(cuid())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id])
+  question  String
+  scope     String       @default("general") // general | future
+  status    String       @default("visible")
+  closesAt  DateTime?
+  createdAt DateTime     @default(now())
+  options   PollOption[]
+  votes     PollVote[]
+
+  @@index([scope, status, createdAt(sort: Desc)])
+}
+
+model PollOption {
+  id     String     @id @default(cuid())
+  pollId String
+  poll   Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  label  String
+  order  Int
+  votes  PollVote[]
+}
+
+model PollVote {
+  pollId   String
+  poll     Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User       @relation(fields: [userId], references: [id])
+  optionId String
+  option   PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+
+  @@id([pollId, userId])
+}
+
+model ShareRecord {
+  id        String   @id @default(cuid())
+  subject   String
+  createdAt DateTime @default(now())
+
+  @@index([subject])
+}
+
+model UserContribution {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  kind      String // memory | comment | poll | reaction | vote
+  subject   String
+  refId     String?
+  excerpt   String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+}
+
+model ModerationReport {
+  id         String    @id @default(cuid())
+  subject    String
+  reporterId String
+  reporter   User      @relation("reporter", fields: [reporterId], references: [id])
+  reason     String
+  status     String    @default("open") // open | upheld | dismissed
+  resolvedAt DateTime?
+  resolution String?
+  createdAt  DateTime  @default(now())
+
+  @@unique([subject, reporterId])
+  @@index([status, createdAt])
+}

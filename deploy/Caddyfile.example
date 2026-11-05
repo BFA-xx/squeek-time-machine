@@ -1,0 +1,15 @@
+# Everything on one server. The web app proxies /api/v1 to the API itself, so the API needs no public route.
+time.example.com {
+	encode gzip
+	reverse_proxy 127.0.0.1:3300 {
+		# Live updates must not be buffered.
+		flush_interval -1
+	}
+}
+
+# Only if the web app is on Vercel: expose the API so Vercel can reach it.
+# api.time.example.com {
+# 	reverse_proxy 127.0.0.1:4300 {
+# 		flush_interval -1
+# 	}
+# }
