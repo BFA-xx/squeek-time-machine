@@ -40,7 +40,7 @@ export function ContributePanel() {
     try {
       const c = await load();
       await c.checkRelease();
-      const who = account ?? (await c.connectWallet());
+      const who = await c.connectWallet();
       setAccount(who);
       const prepared = await c.prepare(action, who);
       await c.simulate(prepared, who);

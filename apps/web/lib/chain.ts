@@ -1,6 +1,6 @@
 "use client";
 import { CHAIN_ABI, CHAIN_ID, CHAIN_ID_HEX, CONTRACTS, PINNED_RELEASE, formatSqk } from "@stm/shared";
-import { BaseError, ContractFunctionRevertedError, createPublicClient, createWalletClient, custom, encodeFunctionData, parseAbi, type Address, type Hex } from "viem";
+import { BaseError, ContractFunctionRevertedError, createPublicClient, createWalletClient, custom, encodeFunctionData, fallback, http, parseAbi, type Address, type Hex } from "viem";
 import { sepolia } from "viem/chains";
 import { api, type WorldState } from "./api";
 
@@ -34,7 +34,29 @@ function provider() {
   if (!window.ethereum) throw new ChainStop("No wallet found in this browser. Open this page in your wallet app's browser, or install a wallet.");
   return window.ethereum as Parameters<typeof custom>[0];
 }
-const client = () => createPublicClient({ chain: sepolia, transport: custom(provider()) });
+
+/**
+ * Reads and simulations go straight to Sepolia. Wallets differ in what they'll answer: some refuse reads
+ * outright, especially on testnets. The wallet is only the last resort here, and it's still what signs.
+ */
+const SEPOLIA_RPCS = ["https://sepolia.gateway.tenderly.co", "https://ethereum-sepolia-rpc.publicnode.com", "https://rpc.sepolia.ethpandaops.io"];
+const client = () => createPublicClient({
+  chain: sepolia,
+  transport: fallback([...SEPOLIA_RPCS.map((url) => http(url, { timeout: 10_000 })), custom(provider())], { retryCount: 1 }),
+});
+
+const WALLET_ON_SEPOLIA = "Your wallet isn't on Sepolia and couldn't switch, so nothing was sent. Turn on testnets in your wallet's settings, select Sepolia, and try again.";
+
+/** Testnets are often switched off in wallets. Never carries on unless the wallet really is on Sepolia. */
+async function ensureSepolia(eth: { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> }) {
+  try {
+    if (Number(await eth.request({ method: "eth_chainId" })) !== CHAIN_ID) await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: CHAIN_ID_HEX }] });
+    if (Number(await eth.request({ method: "eth_chainId" })) === CHAIN_ID) return;
+  } catch (e) {
+    if ((e as { code?: number }).code === 4001) throw new ChainStop("You declined the switch to Sepolia, so nothing was sent.");
+  }
+  throw new ChainStop(WALLET_ON_SEPOLIA);
+}
 
 /** Stops before any wallet prompt if the live release isn't the one these addresses came from. */
 export async function checkRelease() {
@@ -47,8 +69,7 @@ export async function connectWallet(): Promise<Address> {
   const eth = provider() as { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> };
   const [account] = (await eth.request({ method: "eth_requestAccounts" })) as Address[];
   if (!account) throw new ChainStop("The wallet didn't share an account.");
-  const chain = Number(await eth.request({ method: "eth_chainId" }));
-  if (chain !== CHAIN_ID) await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: CHAIN_ID_HEX }] });
+  await ensureSepolia(eth);
   return account;
 }
 
@@ -56,6 +77,15 @@ const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 /** Runs the checks Squeekchain's docs list for each action, against the chain itself. API values never go into a transaction. */
 export async function prepare(action: Action, account: Address): Promise<Prepared> {
+  try {
+    return await checkAndBuild(action, account);
+  } catch (e) {
+    if (e instanceof ChainStop) throw e;
+    throw new ChainStop("Couldn't read Sepolia just now, so nothing was sent. Try again in a moment.");
+  }
+}
+
+async function checkAndBuild(action: Action, account: Address): Promise<Prepared> {
   const c = client();
   const STAKING = CONTRACTS.staking as Address, NFT = CONTRACTS.nft as Address, MINING = CONTRACTS.mining as Address;
   const ownerOf = (id: string) => c.readContract({ address: NFT, abi: nft, functionName: "ownerOf", args: [BigInt(id)] });
@@ -127,6 +157,9 @@ export async function simulate(p: Prepared, account: Address): Promise<void> {
 export interface Sent { hash: Hex; status: "success" | "reverted" }
 
 export async function send(p: Prepared, account: Address): Promise<Sent> {
+  const eth = provider() as { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> };
+  // The wallet could have moved since the review screen.
+  await ensureSepolia(eth);
   const wallet = createWalletClient({ account, chain: sepolia, transport: custom(provider()) });
   let hash: Hex;
   try {

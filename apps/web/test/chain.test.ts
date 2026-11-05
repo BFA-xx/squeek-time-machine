@@ -11,14 +11,19 @@ const staking = parseAbi(CHAIN_ABI.staking);
 const nft = parseAbi(CHAIN_ABI.nft);
 
 /** A pretend wallet that answers contract reads from a table, and records anything it's asked to send. */
-function wallet(reads: Record<string, unknown>, opts: { callFails?: boolean; chain?: string } = {}) {
+function wallet(reads: Record<string, unknown>, opts: { callFails?: boolean; chain?: string; refusesReads?: boolean; cantSwitch?: boolean; rpcDown?: boolean } = {}) {
+  let chain = opts.chain ?? "0xaa36a7";
   const calls: { method: string; params?: unknown[] }[] = [];
   const abis = [...mining, ...staking, ...nft].filter((x) => x.type === "function") as never[];
   const request = async ({ method, params }: { method: string; params?: unknown[] }) => {
     calls.push({ method, params });
     if (method === "eth_requestAccounts") return [ME];
-    if (method === "eth_chainId") return opts.chain ?? "0xaa36a7";
-    if (method === "wallet_switchEthereumChain") return null;
+    if (method === "eth_chainId") return chain;
+    if (method === "wallet_switchEthereumChain") {
+      if (opts.cantSwitch) throw Object.assign(new Error("Unrecognized chain"), { code: 4902 });
+      chain = "0xaa36a7";
+      return null;
+    }
     if (method === "eth_call") {
       const { data } = params![0] as { data: `0x${string}` };
       for (const abi of [mining, staking, nft]) {
@@ -37,12 +42,27 @@ function wallet(reads: Record<string, unknown>, opts: { callFails?: boolean; cha
     throw new Error(`unexpected ${method}`);
   };
   void abis;
-  window.ethereum = { request } as never;
+  window.ethereum = {
+    request: async (a: { method: string; params?: unknown[] }) => {
+      if (a.method === "eth_call" && opts.refusesReads) throw Object.assign(new Error("Missing or invalid parameters."), { code: -32602 });
+      return request(a);
+    },
+  } as never;
+  // The public Sepolia endpoints, answering from the same table.
+  vi.stubGlobal("fetch", vi.fn(async (_url: string, init: { body: string }) => {
+    if (opts.rpcDown) throw new Error("network down");
+    const body = JSON.parse(init.body) as { id: number; method: string; params?: unknown[] };
+    try {
+      return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result: await request(body) }), { status: 200 });
+    } catch {
+      return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, error: { code: 3, message: "execution reverted" } }), { status: 200 });
+    }
+  }));
   return calls;
 }
 
 beforeEach(() => vi.restoreAllMocks());
-afterEach(() => { delete (window as { ethereum?: unknown }).ethereum; });
+afterEach(() => { delete (window as { ethereum?: unknown }).ethereum; vi.unstubAllGlobals(); });
 
 const live = { minted: 0n, processedThroughRound: 0n, startRound: 17n, startHeight: 0n, fundedBlocks: 0n, guardian: OTHER, bootstrapped: true, startCaptured: true, paused: false, active: true };
 
@@ -54,6 +74,22 @@ describe("on-chain actions", () => {
     const calls = wallet({}, { chain: "0x1" });
     await connectWallet();
     expect(calls.some((c) => c.method === "wallet_switchEthereumChain")).toBe(true);
+  });
+  it("still works when the wallet refuses to do chain reads", async () => {
+    wallet({ state: live, checkpointStatus: [false, 275n, true] }, { refusesReads: true });
+    const p = await prepare({ kind: "checkpoint" }, ME);
+    expect(decodeFunctionData({ abi: mining, data: p.data }).functionName).toBe("checkpoint");
+    await expect(simulate(p, ME)).resolves.toBeUndefined();
+  });
+  it("explains it plainly when the wallet can't get to Sepolia", async () => {
+    wallet({}, { chain: "0x1", cantSwitch: true });
+    await expect(connectWallet()).rejects.toThrow(/couldn't switch.*testnets/);
+  });
+  it("gives a plain message rather than raw call data when the chain can't be read", async () => {
+    wallet({}, { rpcDown: true, refusesReads: true });
+    const e = await prepare({ kind: "checkpoint" }, ME).catch((x: Error) => x);
+    expect((e as Error).message).toMatch(/Couldn't read Sepolia/);
+    expect((e as Error).message).not.toMatch(/0x/);
   });
   it("prepares a checkpoint only when a settled round is waiting", async () => {
     wallet({ state: live, checkpointStatus: [false, 275n, true] });
