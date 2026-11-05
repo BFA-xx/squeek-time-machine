@@ -9,16 +9,6 @@ export default {
   reactStrictMode: true,
   outputFileTracingRoot: root,
   transpilePackages: ["@stm/shared"],
-  // squeek.koslabs.app is the only address. Zerion, through Blockaid, flagged squeektime.vercel.app
-  // as a malicious dapp: a free vercel.app address asking to connect a wallet is the drainer pattern.
-  async redirects() {
-    return [{
-      source: "/:path*",
-      has: [{ type: "host", value: "squeektime.vercel.app" }],
-      destination: "https://squeek.koslabs.app/:path*",
-      permanent: true,
-    }];
-  },
   // Everything goes through our own origin, so session cookies stay first-party.
   async rewrites() {
     return [{ source: "/api/v1/:path*", destination: `${api}/v1/:path*` }];
