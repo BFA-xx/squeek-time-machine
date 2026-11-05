@@ -4,18 +4,27 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { api } from "@/lib/api";
 import { useWorld } from "@/lib/store";
-import { clickable, RoomSign } from "./common";
+import { audio } from "@/lib/audio";
+import { clickable, RoomSign, useSolid, useSpots } from "./common";
 
 interface Lock { key: string; title: string; target: string; current: string | null }
 
 /** Sealed doors. The ring around each one fills with real progress toward a real threshold. */
-export default function FutureRoom() {
+export default function FutureRoom({ index }: { index: number }) {
   const open = useWorld((s) => s.openPanel);
   const bump = useWorld((s) => s.blockBump);
   const [locks, setLocks] = useState<Lock[]>([]);
   useEffect(() => {
     api<{ locks: Lock[] }>("/future").then((r) => setLocks(r.locks)).catch(() => undefined);
   }, [bump]);
+  const shown = locks.slice(0, 7);
+  const angleOf = (i: number) => (i - (shown.length - 1) / 2) * 0.62;
+  const percent = (l: Lock) => (l.current ? Math.min(100, Number((BigInt(l.current) * 10000n) / BigInt(l.target)) / 100) : 0);
+  useSolid(index, [[0, -3, 1.4], ...shown.map((_, i): [number, number, number] => [Math.sin(angleOf(i)) * 13.4, -Math.cos(angleOf(i)) * 13.4, 1.5])]);
+  useSpots(index, [
+    { key: "wish-stone", lx: 0, lz: -3, r: 4, label: "Write a prediction on the wish stone", action: () => { audio?.select(); open({ kind: "write", mode: "expectation" }); } },
+    ...shown.map((l, i) => ({ key: `door-${l.key}`, lx: Math.sin(angleOf(i)) * 11.8, lz: -Math.cos(angleOf(i)) * 11.8, r: 2.6, label: `Sealed: ${l.title} (${percent(l).toFixed(1)}% there)`, action: () => { audio?.select(); open({ kind: "room", room: "future" }); } })),
+  ], locks);
   const stars = useRef<THREE.Points>(null);
   const geo = useMemo(() => {
     const g = new THREE.BufferGeometry();
@@ -35,6 +44,10 @@ export default function FutureRoom() {
     <group>
       <RoomSign text="The Future" color="#fdfbc8" y={6.8} />
       <points ref={stars} geometry={geo}><pointsMaterial color="#fdfbc8" size={0.09} sizeAttenuation transparent opacity={0.8} toneMapped={false} /></points>
+      <group position={[0, 0, -3]} {...clickable(open, { kind: "write", mode: "expectation" })}>
+        <mesh position={[0, 0.9, 0]} castShadow rotation={[0, 0.5, 0]}><dodecahedronGeometry args={[1.15]} /><meshStandardMaterial color="#4a4656" roughness={0.9} flatShading /></mesh>
+        <mesh position={[0, 2.35, 0]}><sphereGeometry args={[0.22, 14, 14]} /><meshStandardMaterial color="#fdfbc8" emissive="#fdfbc8" emissiveIntensity={1.6} toneMapped={false} /></mesh>
+      </group>
       {locks.slice(0, 7).map((l, i, all) => {
         const a = (i - (all.length - 1) / 2) * 0.62;
         const pct = l.current ? Math.min(1, Number((BigInt(l.current) * 10000n) / BigInt(l.target)) / 10000) : 0;

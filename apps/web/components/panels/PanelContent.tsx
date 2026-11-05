@@ -1,9 +1,11 @@
 "use client";
 import { useWorld, type Panel } from "@/lib/store";
 import { AccountPanel } from "./account";
+import { DigPanel } from "./dig";
 import { SEEDS } from "./discoveries";
+import { SqueekDetail, SqueeksPanel } from "./squeeks";
 import { BlockView, EventView, TimelinePanel, VaultPanel } from "./records";
-import { ArtifactView, BeginningPanel, CommunityPanel, EvolutionPanel, FuturePanel, SearchPanel, UserPanel, WheelPanel } from "./rooms";
+import { ArtifactView, BeginningPanel, CommunityPanel, EvolutionPanel, FuturePanel, SearchPanel, UserPanel, WheelPanel, WritePanel } from "./rooms";
 import { SettingsPanel } from "../hud/SettingsPanel";
 import { Heading } from "./ui";
 
@@ -12,6 +14,7 @@ export function PanelContent({ panel }: { panel: Panel }) {
   switch (panel.kind) {
     case "room":
       switch (panel.room) {
+        case "dig": return <DigPanel />;
         case "beginning": return <BeginningPanel />;
         case "timeline": return <TimelinePanel />;
         case "wheel": return <WheelPanel />;
@@ -25,6 +28,10 @@ export function PanelContent({ panel }: { panel: Panel }) {
     case "block": return <BlockView key={panel.height} height={panel.height} />;
     case "artifact": return <ArtifactView slug={panel.slug} />;
     case "user": return <UserPanel key={panel.username} username={panel.username} />;
+    case "dig": return <DigPanel key={panel.focus ?? "all"} focus={panel.focus} />;
+    case "squeeks": return <SqueeksPanel />;
+    case "squeek": return <SqueekDetail key={panel.id} id={panel.id} />;
+    case "write": return <WritePanel key={panel.mode} mode={panel.mode} />;
     case "search": return <SearchPanel />;
     case "settings": return <SettingsPanel />;
     case "account": return <AccountPanel />;

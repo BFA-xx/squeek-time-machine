@@ -55,18 +55,22 @@ export function ReportButton({ subject }: { subject: string }) {
   );
 }
 
-function Author({ name }: { name: string }) {
+function Author({ name, displayName }: { name: string; displayName?: string | null }) {
   const open = useWorld((s) => s.openPanel);
-  return <button className="font-data text-xs text-amber hover:underline" onClick={() => open({ kind: "user", username: name })}>{name}</button>;
+  return (
+    <button className="font-data text-xs text-amber hover:underline" aria-label={`Profile of ${displayName ?? name}`} onClick={() => open({ kind: "user", username: name })}>
+      {displayName ?? name}{displayName && <span className="text-gray"> @{name}</span>}
+    </button>
+  );
 }
 
-export function MemoryCard({ m, children }: { m: Pick<Memory, "id" | "kind" | "body" | "createdAt" | "username"> & { subject?: string; reactions?: Record<string, number> }; children?: React.ReactNode }) {
+export function MemoryCard({ m, children }: { m: Pick<Memory, "id" | "kind" | "body" | "createdAt" | "username" | "displayName"> & { subject?: string; reactions?: Record<string, number> }; children?: React.ReactNode }) {
   const href = m.subject ? subjectHref(m.subject) : null;
   return (
     <article id={`memory-${m.id}`} className="card p-3">
       <p className="pre-wrap text-sm text-ink">{m.body}</p>
       <div className="flex flex-wrap items-center gap-2 mt-2">
-        <Author name={m.username} />
+        <Author name={m.username} displayName={m.displayName} />
         <time dateTime={m.createdAt} className="font-data text-xs text-gray">{formatUtc(m.createdAt)}</time>
         {m.kind !== "memory" && <span className="label">{m.kind}</span>}
       </div>
@@ -161,7 +165,7 @@ export function Discussion({ subject }: { subject: string }) {
   const replies = (id: string) => data?.filter((c) => c.parentId === id) ?? [];
   const Row = ({ c, nested }: { c: CommentRow; nested?: boolean }) => (
     <article className={`py-2 ${nested ? "pl-3 ml-1 border-l border-line" : "border-t border-line"}`}>
-      <div className="flex flex-wrap items-center gap-2"><Author name={c.username} /><time dateTime={c.createdAt} className="font-data text-xs text-gray">{formatUtc(c.createdAt)}</time></div>
+      <div className="flex flex-wrap items-center gap-2"><Author name={c.username} displayName={c.displayName} /><time dateTime={c.createdAt} className="font-data text-xs text-gray">{formatUtc(c.createdAt)}</time></div>
       <p className="pre-wrap text-sm text-ink mt-1">{c.body}</p>
       <div className="flex flex-wrap items-center gap-3 mt-1.5">
         <ReactionRow subject={`comment:${c.id}`} counts={c.reactions} />

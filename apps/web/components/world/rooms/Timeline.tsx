@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { api, type EventSummary } from "@/lib/api";
 import { useWorld } from "@/lib/store";
 import { audio } from "@/lib/audio";
-import { RoomSign, useSolid } from "./common";
+import { RoomSign, useSolid, useSpots } from "./common";
 
 const COLORS: Record<string, string> = { settlement: "#5b7cfa", checkpoint: "#a8baff", milestone: "#f2c230", record: "#ffc048", merge: "#f08fb0", squeek: "#b6b6c2", rewards: "#35d07f", archive: "#fdfbc8", other: "#82828f" };
 
@@ -34,6 +34,10 @@ export default function TimelineRoom({ index }: { index: number }) {
     return () => { live = false; };
   }, [bump]);
   useSolid(index, events.map((_, i) => { const [x, z] = pillarPosition(i, events.length); return [x, z, 0.5]; }));
+  useSpots(index, events.map((e, i) => {
+    const [lx, lz] = pillarPosition(i, events.length);
+    return { key: `pillar-${e.id}`, lx, lz, r: 2, label: `Read: ${e.title}`, action: () => { audio?.select(); open({ kind: "event", id: e.id }); } };
+  }), events);
   const color = useMemo(() => new THREE.Color(), []);
   useEffect(() => {
     const m = ref.current;

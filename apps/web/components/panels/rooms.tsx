@@ -260,6 +260,7 @@ export function CommunityPanel() {
         <p className="title text-2xl text-gold uppercase tracking-wide">I was here</p>
         <p className="text-sm text-dim mt-1">Open any moment on the Timeline or any block in the Vault, and attach your own memory to it.</p>
         <div className="flex gap-2 mt-2">
+          <button className="btn btn-gold" onClick={() => open({ kind: "write", mode: "memory" })}>Write a memory</button>
           <button className="btn" onClick={() => open({ kind: "room", room: "timeline" })}>Find a moment</button>
           {!me && <button className="btn" onClick={() => open({ kind: "account" })}>Sign in</button>}
         </div>
@@ -286,7 +287,7 @@ export function CommunityPanel() {
         {feed?.length ? (
           <ul className="space-y-1">{feed.map((f) => (
             <li key={f.id} className="text-sm text-dim border-t border-line py-1.5 pre-wrap">
-              <button className="font-data text-xs text-amber hover:underline mr-1" onClick={() => open({ kind: "user", username: f.username })}>{f.username}</button>
+              <button className="font-data text-xs text-amber hover:underline mr-1" onClick={() => open({ kind: "user", username: f.username })}>{f.displayName ?? f.username}</button>
               {f.kind === "memory" ? "left a memory" : f.kind === "comment" ? "commented" : "started a poll"}{f.excerpt ? `: ${f.excerpt}` : ""}
             </li>
           ))}</ul>
@@ -376,35 +377,20 @@ export function FuturePanel() {
 }
 
 export function UserPanel({ username }: { username: string }) {
-  const { data, error, loading, reload } = useApi<{ username: string; wallet: string | null; bio: string; joinedAt: string; contributions: { id: string; kind: string; subject: string; excerpt: string | null; createdAt: string }[]; totals: Record<string, number> }>(`/users/${encodeURIComponent(username)}`);
+  const bump = useMe((s) => s.me?.username);
+  const { data, error, loading, reload } = useApi<{ username: string; displayName: string | null; wallet: string | null; bio: string; joinedAt: string; contributions: { id: string; kind: string; subject: string; excerpt: string | null; createdAt: string }[]; totals: Record<string, number> }>(`/users/${encodeURIComponent(username)}`, [bump]);
   const me = useMe((s) => s.me);
-  const [bio, setBio] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
+  const open = useWorld((s) => s.openPanel);
   if (loading && !data) return <Loading />;
   if (error || !data) return <ErrorNote retry={reload}>{error ?? "No such user."}</ErrorNote>;
   return (
     <div>
-      <Heading eyebrow="Community member" title={data.username} sub={data.bio || undefined} />
+      <Heading eyebrow={data.displayName ? `@${data.username}` : "Community member"} title={data.displayName ?? data.username} sub={data.bio || undefined} />
       <div className="flex flex-wrap gap-3 text-xs text-gray font-data mb-3">
         <span>Joined {data.joinedAt.slice(0, 10)}</span>
         {Object.entries(data.totals).map(([k, v]) => <span key={k}>{v} {k}{v === 1 ? "" : "s"}</span>)}
       </div>
-      {me?.username === data.username && (
-        <form className="card p-3 space-y-2 mb-3" onSubmit={async (e) => {
-          e.preventDefault();
-          try {
-            await api("/users/me/profile", { method: "PUT", body: { bio: bio ?? data.bio } });
-            setNote("Saved.");
-            await reload();
-          } catch (err) {
-            setNote((err as Error).message);
-          }
-        }}>
-          <label className="block"><span className="label">About you</span><input className="field mt-1" maxLength={240} value={bio ?? data.bio} onChange={(e) => setBio(e.target.value)} /></label>
-          <button className="btn">Save</button>
-          {note && <p role="status" className="text-xs text-dim">{note}</p>}
-        </form>
-      )}
+      {me?.username === data.username && <button className="btn mb-3" onClick={() => open({ kind: "account" })}>Edit profile</button>}
       <Section title="Contributions">
         {data.contributions.length ? <ul className="space-y-1">{data.contributions.map((c) => {
           const href = subjectHref(c.subject);
@@ -416,6 +402,75 @@ export function UserPanel({ username }: { username: string }) {
           );
         })}</ul> : <Empty>Nothing yet.</Empty>}
       </Section>
+    </div>
+  );
+}
+
+/** What the hamster writes at the monument or the wish stone. A memory is pinned to a real moment you pick. */
+export function WritePanel({ mode }: { mode: "memory" | "expectation" }) {
+  useLoadMe();
+  const me = useMe((s) => s.me);
+  const open = useWorld((s) => s.openPanel);
+  const bump = useWorld((s) => s.bumpMemories);
+  const { data } = useApi<{ events: { id: string; title: string; occurredAt: string }[] }>(mode === "memory" ? "/events?limit=40&minSignificance=3" : null);
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [note, setNote] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const memory = mode === "memory";
+  const chosen = subject || data?.events[0]?.id || "";
+  const heading = memory ? { eyebrow: "The Community Archive", title: "I was here", sub: "Pick the moment you remember and write what you want kept. It joins the wall as a new lantern." } : { eyebrow: "The Future", title: "Make a prediction", sub: "This is your guess, and it's shown as a community prediction, never as an announcement." };
+  if (!me) {
+    return (
+      <div>
+        <Heading {...heading} />
+        <button className="btn btn-gold" onClick={() => open({ kind: "account" })}>Sign in to write</button>
+      </div>
+    );
+  }
+  if (done) {
+    return (
+      <div>
+        <Heading {...heading} />
+        <p role="status" className="text-mint text-sm">{memory ? "Done. Your lantern is up." : "Your prediction is on the wall."}</p>
+        <div className="flex gap-2 mt-3">
+          <button className="btn" onClick={() => { setBody(""); setDone(false); }}>Write another</button>
+          {memory && <button className="btn" onClick={() => open({ kind: "event", id: chosen })}>See that moment</button>}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <Heading {...heading} />
+      <form className="space-y-3" onSubmit={async (e) => {
+        e.preventDefault();
+        setBusy(true);
+        setNote(null);
+        try {
+          await api("/community/memories", { method: "POST", body: memory ? { subject: `event:${chosen}`, body } : { kind: "expectation", body } });
+          bump();
+          setDone(true);
+        } catch (err) {
+          setNote((err as Error).message);
+        } finally {
+          setBusy(false);
+        }
+      }}>
+        {memory && (
+          <label className="block"><span className="label">The moment</span>
+            <select className="field mt-1" value={chosen} onChange={(e) => setSubject(e.target.value)}>
+              {data?.events.map((ev) => <option key={ev.id} value={ev.id}>{ev.title} · {ev.occurredAt.slice(0, 10)}</option>)}
+            </select>
+          </label>
+        )}
+        <label className="block"><span className="label">{memory ? "Your memory" : "Your prediction"}</span>
+          <textarea autoFocus className="field mt-1 min-h-24" maxLength={400} value={body} onChange={(e) => setBody(e.target.value)} placeholder={memory ? "I was here when…" : "I think that…"} />
+        </label>
+        {note && <p role="alert" className="text-sm text-rose">{note}</p>}
+        <button className="btn btn-gold" disabled={busy || !body.trim() || (memory && !chosen)}>{memory ? "Hang my lantern" : "Add my prediction"}</button>
+      </form>
     </div>
   );
 }

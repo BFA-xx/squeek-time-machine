@@ -2,7 +2,7 @@ import { Global, Injectable, Module } from "@nestjs/common";
 import { Subject } from "rxjs";
 
 export interface WorldUpdate {
-  kind: "live" | "event" | "block" | "settlement" | "milestone" | "mining" | "wheel" | "community" | "source";
+  kind: "live" | "event" | "block" | "settlement" | "milestone" | "mining" | "wheel" | "community" | "source" | "dig";
   data: unknown;
 }
 

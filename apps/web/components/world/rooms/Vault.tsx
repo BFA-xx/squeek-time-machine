@@ -4,7 +4,9 @@ import * as THREE from "three";
 import { api, type BlockSummary } from "@/lib/api";
 import { useWorld } from "@/lib/store";
 import { audio } from "@/lib/audio";
-import { clickable, RoomSign, useSolid } from "./common";
+import { addResolver } from "../spots";
+import { ROOM_ANGLES, roomCenter, roomPoint } from "../layout";
+import { clickable, RoomSign, useSolid, useSpots } from "./common";
 
 const MAX = 6000;
 const PER_RING = 118;
@@ -33,6 +35,28 @@ export default function VaultRoom({ index }: { index: number }) {
     api<{ blocks: BlockSummary[] }>(`/blocks?limit=2000`).then((r) => live && setBlocks(r.blocks.slice().reverse())).catch(() => undefined);
     return () => { live = false; };
   }, [bump]);
+  useSpots(index, [{ key: "vault-plinth", lx: 0, lz: 0, r: 4.6, label: "Search the vault by block height", action: () => { audio?.select(); open({ kind: "room", room: "vault" }); } }], "static");
+  // Walking along the wall offers whichever block is in front of you.
+  useEffect(() => addResolver((p) => {
+    if (!blocks.length) return null;
+    const c = roomCenter(index);
+    const a = ROOM_ANGLES[index];
+    const dx = p.x - c.x, dz = p.z - c.z;
+    const lx = -dx * Math.cos(a) + dz * Math.sin(a);
+    const lz = -dx * Math.sin(a) - dz * Math.cos(a);
+    if (Math.hypot(lx, lz) < 12.4) return null;
+    const angle = (Math.atan2(lx, lz) + Math.PI * 2) % (Math.PI * 2);
+    if (angle < DOOR_GAP || angle > Math.PI * 2 - DOOR_GAP) return null;
+    const column = Math.round(((angle - DOOR_GAP) / (Math.PI * 2 - DOOR_GAP * 2)) * PER_RING) % PER_RING;
+    const rows = Math.floor((Math.min(blocks.length, MAX) - 1 - column) / PER_RING);
+    if (rows < 0) return null;
+    const i = column + rows * PER_RING;
+    const b = blocks[i];
+    if (!b) return null;
+    const [bx, , bz] = blockPlace(i);
+    const at = roomPoint(index, bx * 0.86, bz * 0.86);
+    return { key: `block-${b.height}`, x: at.x, z: at.z, r: 3.2, label: `Pull out block ${b.height}`, action: () => { audio?.select(); open({ kind: "block", height: b.height }); } };
+  }), [blocks, index, open]);
   const col = useMemo(() => new THREE.Color(), []);
   useEffect(() => {
     const m = ref.current;

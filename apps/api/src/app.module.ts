@@ -9,7 +9,10 @@ import { AdminGuard, AuthGuard } from "./community/auth.guard";
 import { AuthService } from "./community/auth.service";
 import { CommunityController } from "./community/community.controller";
 import { CommunityService } from "./community/community.service";
+import { DigController } from "./dig/dig.controller";
 import { IngestionModule } from "./ingestion/ingestion.module";
+import { SqueeksController } from "./squeeks/squeeks.controller";
+import { SqueeksService } from "./squeeks/squeeks.service";
 import { StreamModule } from "./stream/stream.service";
 
 @Module({
@@ -19,7 +22,7 @@ import { StreamModule } from "./stream/stream.service";
     StreamModule,
     IngestionModule,
   ],
-  controllers: [ArchiveController, CommunityController],
-  providers: [ArchiveService, AuthService, CommunityService, AuthGuard, AdminGuard, { provide: APP_GUARD, useClass: ClientIpThrottlerGuard }],
+  controllers: [ArchiveController, CommunityController, DigController, SqueeksController],
+  providers: [SqueeksService, ArchiveService, AuthService, CommunityService, AuthGuard, AdminGuard, { provide: APP_GUARD, useClass: ClientIpThrottlerGuard }],
 })
 export class AppModule {}

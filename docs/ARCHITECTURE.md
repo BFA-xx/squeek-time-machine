@@ -39,9 +39,21 @@ Each source has its own loop and exponential backoff, so one failure can't stop 
 
 The API should run as one instance. The ingestion loops aren't coordinated across processes. Duplicates are still prevented by database constraints, but the SSE stream only reaches clients of the instance that ingested the update.
 
+## The Great Dig
+
+A free game with no money in it. `packages/shared/src/dig.ts` holds the rules, and `apps/api/src/dig/dig.service.ts` runs them.
+
+- **Shifts:** 36 rounds, or six hours. Players can only call the next shift, and calls lock when it starts, by the server's clock. Picks stay hidden until then.
+- **Settling:** a shift settles only when the certified frontier has passed its last round and the contract logs have been read past that settlement. Its work comes from certified totals. Rounds past the frontier are unknown, so they never count as zero.
+- **Scoring:** a right call earns 10 points, plus up to 90 more the fewer people got it right. Points can't be bought, sold or spent.
+- **Chambers:** every 1,000 settled work breaks through one, timed by the settlement that crossed the line. The crew with the most points since the last breakthrough claims it, and a tie claims nothing.
+- **Squeeks:** cosmetic only. Ownership is read from the official API for display, checked when chosen and again hourly. A Squeek never affects points.
+- **New releases:** everything is per installation, so a reset starts a new season.
+- **Welfare:** the game only observes. Nothing in it can prompt or reward making the hamster run.
+
 ## 3D world
 
-- One continuous world: a hub, seven tunnels and seven rooms, laid out in `components/world/layout.ts`, which also holds the collision rules.
+- One continuous world: a hub, eight tunnels and eight rooms, laid out in `components/world/layout.ts`, which also holds the collision rules.
 - Room contents load when you get close and unload when you leave.
 - Block, pillar and lantern rows are instanced, so thousands of records stay cheap.
 - There's a fixed number of lights, moved around rather than added, so walking never recompiles shaders.

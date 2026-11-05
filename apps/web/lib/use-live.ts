@@ -5,7 +5,7 @@ import { useWorld, type Live } from "./store";
 
 /** One SSE connection for the page. The browser hears from our server only, never the official API. */
 export function useLiveWorld(toasts = true) {
-  const { setWorld, setLive, bumpBlocks, bumpEvents, bumpMemories, pushToast, setConnection } = useWorld.getState();
+  const { setWorld, setLive, bumpBlocks, bumpEvents, bumpMemories, bumpDig, pushToast, setConnection } = useWorld.getState();
   useEffect(() => {
     let closed = false;
     const refresh = () => api<WorldState>("/world/state").then((w) => {
@@ -46,6 +46,13 @@ export function useLiveWorld(toasts = true) {
       void refresh();
     });
     es.addEventListener("source", () => void refresh());
+    es.addEventListener("dig", (e) => {
+      const d = parse(e) as { kind: string; index?: number; band?: string; number?: number; work?: string; calls?: number } | null;
+      bumpDig();
+      if (!d || !toasts) return;
+      if (d.kind === "shift" && d.calls) pushToast({ title: `Shift ${d.index} settled: ${d.band}, ${d.work} work`, panel: { kind: "dig" }, tone: "chain" });
+      if (d.kind === "chamber") pushToast({ title: `Breakthrough! Chamber ${d.number} is open`, panel: { kind: "dig" }, tone: "chain" });
+    });
     es.addEventListener("community", (e) => {
       const d = parse(e) as { kind: string; username?: string; subject?: string } | null;
       bumpMemories();

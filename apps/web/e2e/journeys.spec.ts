@@ -20,10 +20,10 @@ test("title screen offers a way in with no forced intro, and real numbers", asyn
 
 test("every room can be reached and opened from the world", async ({ page }) => {
   await enterWorld(page);
-  for (const [button, heading] of [["Beginning", "The Beginning"], ["Timeline", "The Timeline"], ["Wheel Room", "The Wheel Room"], ["Block Vault", "The Block Vault"], ["Evolution Room", "The Evolution Room"], ["Community Archive", "The Community Archive"], ["Future", "The Future"]] as const) {
+  for (const [button, heading] of [["Great Dig", "The Great Dig"], ["Beginning", "The Beginning"], ["Timeline", "The Timeline"], ["Wheel Room", "The Wheel Room"], ["Block Vault", "The Block Vault"], ["Evolution Room", "The Evolution Room"], ["Community Archive", "The Community Archive"], ["Future", "The Future"]] as const) {
     await page.getByRole("navigation", { name: "Rooms" }).getByRole("button", { name: button, exact: true }).click();
     await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible({ timeout: 15000 });
-    await page.getByRole("button", { name: `Explore ${heading}` }).click();
+    await page.getByRole("button", { name: "About this room" }).click();
     await expect(page.getByRole("heading", { level: 2, name: heading })).toBeVisible();
     await page.getByRole("button", { name: "Close panel" }).click();
   }
@@ -47,7 +47,7 @@ test("the timeline shows real records and opens one with its provenance", async 
   await row.click();
   await expect(page.getByText("Record", { exact: true })).toBeVisible();
   await expect(page.getByText(/Confirmed on Ethereum|Device measurement|Archive note/).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "Copy link" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Copy link" }).first()).toBeVisible();
   await page.getByRole("button", { name: "← Back" }).click();
   await page.getByPlaceholder("Search events, Squeek numbers, hashes").fill("zzzz-nothing-matches");
   await page.getByRole("button", { name: "Search", exact: true }).last().click();
@@ -151,6 +151,123 @@ test("sound can be switched on without errors, and live data reaches the page", 
   // The status feed only sends when something changed, so a quiet wheel can legitimately stay silent.
   expect([true, "no update"]).toContain(stream);
   expect(errors).toEqual([]);
+});
+
+test("a member can change their name and username", async ({ page }) => {
+  const name = `e2e_${Date.now().toString(36)}`;
+  await enterWorld(page);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.getByLabel("Username").fill(name);
+  await page.getByLabel("Password").fill("a-long-test-password");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Wheel Watcher");
+  const next = `${name}x`;
+  await page.getByLabel(/^Username/).fill(next);
+  await page.getByRole("button", { name: "Save profile" }).click();
+  await expect(page.getByRole("status").getByText("Saved.")).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Wheel Watcher" })).toBeVisible();
+  await page.getByRole("button", { name: "View public profile" }).click();
+  await expect(page.getByText(`@${next}`)).toBeVisible();
+});
+
+test("the practice wheel runs, and stays labelled as not measured", async ({ page, isMobile }) => {
+  await page.goto("/?room=wheel");
+  await page.getByRole("button", { name: "Close panel" }).click();
+  await page.getByRole("button", { name: "Hop on the practice wheel" }).click();
+  const panel = page.getByRole("region", { name: "Wheel run" });
+  await expect(panel).toBeVisible();
+  await expect(panel.getByText(/isn't recorded/)).toBeVisible();
+  const runButton = panel.getByRole("button", { name: /RUN/ });
+  for (let i = 0; i < 8; i++) await runButton.click();
+  await expect(panel.getByText(/^[1-9]\d*$/).first()).toBeVisible();
+  if (!isMobile) {
+    await page.keyboard.press("Space");
+    await page.keyboard.press("KeyE");
+    await expect(panel).toBeHidden();
+  } else {
+    await panel.getByRole("button", { name: "Hop off" }).click();
+    await expect(panel).toBeHidden();
+  }
+});
+
+test("room objects offer their own actions up close", async ({ page }) => {
+  await page.goto("/?room=community");
+  await page.getByRole("button", { name: "Close panel" }).click();
+  await expect(page.getByRole("button", { name: /Write your memory on the monument|Explore The Community Archive/ })).toBeVisible({ timeout: 15000 });
+  await page.goto("/?room=future");
+  await page.getByRole("button", { name: "Close panel" }).click();
+  await expect(page.getByRole("button", { name: /wish stone|Sealed|Explore The Future/ })).toBeVisible({ timeout: 15000 });
+});
+
+test("the monument's write screen asks for a moment and a memory", async ({ page }) => {
+  const name = `e2e_${Date.now().toString(36)}w`;
+  await page.goto("/archive?room=community");
+  await page.getByRole("button", { name: "Write a memory" }).click();
+  await page.getByRole("button", { name: "Sign in to write" }).click();
+  await page.getByLabel("Username").fill(name);
+  await page.getByLabel("Password").fill("a-long-test-password");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await page.getByRole("button", { name: "← Back" }).click();
+  await expect(page.getByLabel("The moment")).toBeVisible();
+  await page.getByLabel("Your memory").fill(`Lantern from ${name}`);
+  await page.getByRole("button", { name: "Hang my lantern" }).click();
+  await expect(page.getByText("Your lantern is up.")).toBeVisible();
+});
+
+test("a member joins a crew, calls a shift, and can't call it twice", async ({ page }) => {
+  const name = `e2e_${Date.now().toString(36)}d`;
+  await page.goto("/?room=dig");
+  await expect(page.getByRole("heading", { level: 2, name: "The Great Dig" })).toBeVisible({ timeout: 20000 });
+  await expect(page.getByText(/of [0-9,]+ settled work/)).toBeVisible();
+  await page.getByRole("button", { name: /Tunnel Rats/ }).click();
+  await page.getByLabel("Username").fill(name);
+  await page.getByLabel("Password").fill("a-long-test-password");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await page.getByRole("button", { name: "← Back" }).click();
+  await page.getByRole("button", { name: /Tunnel Rats/ }).click();
+  await expect(page.getByText("Your crew: Tunnel Rats")).toBeVisible();
+  await page.getByRole("button", { name: /^Stirring/ }).click();
+  await expect(page.getByRole("status").filter({ hasText: "You called Stirring" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Asleep/ })).toBeDisabled();
+  await page.reload();
+  await expect(page.getByText("You called Stirring")).toBeVisible({ timeout: 20000 });
+});
+
+test("the giant wheel in the burrow can be ridden, and boost goes past the unboosted limit", async ({ page, isMobile }) => {
+  test.skip(isMobile, "keyboard journey");
+  await enterWorld(page);
+  await page.getByRole("navigation", { name: "Rooms" }).getByRole("button", { name: "Burrow", exact: true }).click();
+  await page.getByRole("button", { name: "Hop on the giant wheel" }).click({ timeout: 20000 }).catch(async () => {
+    await page.keyboard.down("KeyW");
+    await page.waitForTimeout(1200);
+    await page.keyboard.up("KeyW");
+    await page.getByRole("button", { name: "Hop on the giant wheel" }).click();
+  });
+  const panel = page.getByRole("region", { name: "Wheel run" });
+  await expect(panel).toBeVisible();
+  await page.keyboard.down("ShiftLeft");
+  for (let i = 0; i < 30; i++) {
+    await page.keyboard.press("Space");
+    await page.waitForTimeout(60);
+  }
+  await expect(panel.getByText(/INSANE|OVERDRIVE/)).toBeVisible();
+  await page.keyboard.up("ShiftLeft");
+  await page.keyboard.press("Escape");
+  await expect(panel).toBeHidden();
+});
+
+test("My Squeeks shows a wallet's real NFTs with no signature", async ({ page }) => {
+  await page.goto("/archive?room=timeline");
+  await page.getByRole("button", { name: "My Squeeks" }).click();
+  await page.getByPlaceholder("Or paste a wallet address").fill("not-an-address");
+  await page.getByRole("button", { name: "View" }).click();
+  await expect(page.getByText("That doesn't look like a wallet address.")).toBeVisible();
+  await page.getByPlaceholder("Or paste a wallet address").fill("0x8535a46fe5fd088732cf98a63dfbc98d4f038082");
+  await page.getByRole("button", { name: "View" }).click();
+  await expect(page.getByRole("button", { name: /#322/ })).toBeVisible({ timeout: 20000 });
+  await expect(page.getByAltText("Squeek #322").first()).toBeVisible({ timeout: 20000 });
+  await page.getByRole("button", { name: /#322/ }).click();
+  await expect(page.getByRole("heading", { name: "Squeek #322" })).toBeVisible();
 });
 
 test("settings hold quality, motion and sound choices across a reload", async ({ page }) => {

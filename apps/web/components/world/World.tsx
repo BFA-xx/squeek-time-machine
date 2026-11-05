@@ -2,7 +2,7 @@
 import { AdaptiveDpr, PerformanceMonitor, Sparkles, Text } from "@react-three/drei";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
-import { ROOMS, formatInt, rpmFromMilli } from "@stm/shared";
+import { CREWS, ROOMS, formatInt, rpmFromMilli } from "@stm/shared";
 import gsap from "gsap";
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -10,13 +10,18 @@ import { audio } from "@/lib/audio";
 import { useWorld, type Panel } from "@/lib/store";
 import { SEEDS } from "../panels/discoveries";
 import { Hamster } from "./Hamster";
-import { ROOM_ANGLES, arrivalPoint, isOpenFloor, isWalkable, locate, roomCenter, roomIndex, roomPoint, step } from "./layout";
+import { ROOM_ANGLES, addObstacles, arrivalPoint, isOpenFloor, isWalkable, locate, roomCenter, roomIndex, roomPoint, step } from "./layout";
 import { Portals, Shells, WallDots } from "./Shell";
 import { GiantWheel } from "./Wheel";
+import { pollGamepad } from "./gamepad";
 import { input } from "./input";
+import { ride, rideIntensity, rideStart, rideUpdate } from "./ride";
+import { SpeedEffects } from "./SpeedEffects";
+import { focus, nearestSpot } from "./spots";
 import { WORLD_FONT } from "./rooms/common";
 
 const ROOM_COMPONENTS: Record<string, React.LazyExoticComponent<React.ComponentType<{ index: number }>>> = {
+  dig: lazy(() => import("./rooms/Dig")),
   beginning: lazy(() => import("./rooms/Beginning")),
   timeline: lazy(() => import("./rooms/Timeline")),
   wheel: lazy(() => import("./rooms/WheelRoom")),
@@ -27,6 +32,7 @@ const ROOM_COMPONENTS: Record<string, React.LazyExoticComponent<React.ComponentT
 };
 
 const SPEED = 7.5;
+const SHOWCASE = { x: 12, z: 11 };
 gsap.ticker.lagSmoothing(0);
 
 interface Player { x: number; z: number; yaw: number; speed: number; target: THREE.Vector3 | null; snap: boolean }
@@ -78,6 +84,7 @@ function RoamingLights({ player }: { player: React.RefObject<Player> }) {
   useFrame(() => {
     const { x, z } = player.current;
     near.current?.position.set(x, 3.6, z);
+    if (near.current) near.current.intensity = 28 + rideIntensity() * 150;
     if (key.current) {
       key.current.position.set(x + 14, 34, z + 10);
       key.current.target.position.set(x, 0, z);
@@ -122,6 +129,9 @@ function Controller({ player, intro }: { player: React.RefObject<Player>; intro:
   const reduced = useWorld((s) => s.settings.reducedMotion);
   const fade = useRef<HTMLDivElement | null>(null);
   const idle = useRef(0);
+  const riding = useRef<false | "hub" | "wheel">(false);
+  const digMe = useWorld((s) => s.digMe);
+  const crewColor = CREWS.find((c) => c.slug === digMe?.crew)?.color;
 
   useEffect(() => {
     if (!travel) return;
@@ -166,8 +176,52 @@ function Controller({ player, intro }: { player: React.RefObject<Player>; intro:
       camPos.current.set(p.x - Math.sin(p.yaw) * 9, 6, p.z - Math.cos(p.yaw) * 9);
       look.current.set(p.x, 1.1, p.z);
     }
-    let mx = input.axisX + (input.keys.has("KeyD") || input.keys.has("ArrowRight") ? 1 : 0) - (input.keys.has("KeyA") || input.keys.has("ArrowLeft") ? 1 : 0);
-    let mz = input.axisY + (input.keys.has("KeyS") || input.keys.has("ArrowDown") ? 1 : 0) - (input.keys.has("KeyW") || input.keys.has("ArrowUp") ? 1 : 0);
+    pollGamepad(dt);
+    const wheelIndex = roomIndex("wheel");
+    const riding_ = useWorld.getState().ride;
+    if (riding_) {
+      // On a wheel: the hamster stays at the bottom of the rim, and the camera sits side-on.
+      if (!riding.current) {
+        riding.current = riding_;
+        rideStart();
+        p.target = null;
+      }
+      ride.boost = Math.max(ride.boost, input.keyBoost);
+      rideUpdate(dt);
+      audio?.setRide(rideIntensity());
+      const hub = riding_ === "hub";
+      const c = hub ? { x: 0, z: 0 } : roomCenter(wheelIndex);
+      const facing = hub ? Math.PI / 2 : ROOM_ANGLES[wheelIndex];
+      speedRef.current = Math.min(14, (ride.rpm / 100) * 8);
+      if (avatar.current) {
+        avatar.current.position.set(c.x, hub ? 1.15 : 0.7, c.z);
+        avatar.current.rotation.y = facing;
+        avatar.current.visible = true;
+      }
+      const side = facing + Math.PI / 2;
+      const back = hub ? 18 : 12.5;
+      const ease = reduced ? 1 : 1 - Math.exp(-dt * 3);
+      // Framed high, so the hamster stays visible above the on-screen panel.
+      camPos.current.lerp(new THREE.Vector3(c.x + Math.sin(side) * back, hub ? 3 : 2.4, c.z + Math.cos(side) * back), ease);
+      look.current.lerp(new THREE.Vector3(c.x, hub ? 2 : 0.1, c.z), ease);
+      camera.position.copy(camPos.current);
+      camera.lookAt(look.current);
+      return;
+    }
+    if (riding.current) {
+      const off = riding.current === "hub" ? { x: 0, z: 10, yaw: Math.PI } : { ...roomPoint(wheelIndex, 0, 6.5), yaw: ROOM_ANGLES[wheelIndex] };
+      riding.current = false;
+      audio?.setRide(0);
+      ride.rpm = 0;
+      p.x = off.x;
+      p.z = off.z;
+      p.yaw = off.yaw;
+      p.snap = true;
+      return;
+    }
+    const sprint = Math.max(input.padBoost, input.keyBoost);
+    let mx = input.axisX + input.padX + (input.keys.has("KeyD") || input.keys.has("ArrowRight") ? 1 : 0) - (input.keys.has("KeyA") || input.keys.has("ArrowLeft") ? 1 : 0);
+    let mz = input.axisY + input.padY + (input.keys.has("KeyS") || input.keys.has("ArrowDown") ? 1 : 0) - (input.keys.has("KeyW") || input.keys.has("ArrowUp") ? 1 : 0);
     const manual = Math.hypot(mx, mz) > 0.05;
     let vx = 0, vz = 0;
     if (intro.current.active) {
@@ -188,7 +242,9 @@ function Controller({ player, intro }: { player: React.RefObject<Player>; intro:
     const moving = Math.hypot(vx, vz) > 0.01;
     const before = { x: p.x, z: p.z };
     if (moving) {
-      const n = step(p, vx * SPEED * dt, vz * SPEED * dt);
+      // R2 or Shift sprints, by as much as the trigger is pressed.
+      const pace = SPEED * (1 + sprint * 0.9);
+      const n = step(p, vx * pace * dt, vz * pace * dt);
       p.x = n.x; p.z = n.z;
       if (n.x === before.x && n.z === before.z) p.target = null;
       const want = Math.atan2(vx, vz);
@@ -241,7 +297,7 @@ function Controller({ player, intro }: { player: React.RefObject<Player>; intro:
   });
   return (
     <>
-      <group ref={avatar}><Hamster speedRef={speedRef} scale={1} /></group>
+      <group ref={avatar}><Hamster speedRef={speedRef} scale={1} crewColor={crewColor} stars={digMe?.squeekLevel ?? 0} /></group>
       <mesh ref={marker} rotation={[-Math.PI / 2, 0, 0]} visible={false}><ringGeometry args={[0.3, 0.42, 24]} /><meshBasicMaterial color="#f2c230" transparent opacity={0.85} toneMapped={false} /></mesh>
     </>
   );
@@ -255,7 +311,8 @@ function Proximity({ player }: { player: React.RefObject<Player> }) {
   const last = useRef<string | null>(null);
   const spots = useMemo(() => {
     const list: { key: string; x: number; z: number; r: number; label: string; action: () => void }[] = [
-      { key: "wheel", x: 0, z: 0, r: 11, label: "Inspect WHEELY9000", action: () => open({ kind: "room", room: "wheel" }) },
+      { key: "wheel", x: 0, z: 0, r: 11.5, label: "Hop on the giant wheel", action: () => { audio?.portal(); useWorld.getState().setRide("hub"); } },
+      { key: "showcase", x: SHOWCASE.x, z: SHOWCASE.z, r: 3.4, label: "See my Squeeks", action: () => { audio?.select(); open({ kind: "squeeks" }); } },
     ];
     ROOMS.forEach((room, i) => {
       const c = roomCenter(i);
@@ -270,17 +327,50 @@ function Proximity({ player }: { player: React.RefObject<Player> }) {
   }, [open, markFound]);
   useFrame(() => {
     const p = player.current;
-    const hit = spots.find((s) => {
-      if (s.key.startsWith("seed-") && useWorld.getState().found.includes(s.key)) return false;
-      return Math.hypot(p.x - s.x, p.z - s.z) < s.r;
-    });
-    const key = hit?.key ?? null;
+    if (useWorld.getState().ride) {
+      focus.current = null;
+      if (last.current !== null) {
+        last.current = null;
+        setPrompt(null);
+      }
+      return;
+    }
+    const inReach = (t: { x: number; z: number; r: number }) => Math.hypot(p.x - t.x, p.z - t.z) < t.r;
+    // Most specific first: a hidden seed, then the nearest object you can use, then the room as a whole.
+    const seed = spots.find((s) => s.key.startsWith("seed-") && !useWorld.getState().found.includes(s.key) && inReach(s));
+    const near = seed ? null : nearestSpot(p);
+    const general = seed || near ? null : spots.find((s) => !s.key.startsWith("seed-") && inReach(s));
+    const hit = seed ?? near ?? general ?? null;
+    focus.current = seed ?? near;
+    const key = hit ? `${hit.key}|${hit.label}` : null;
     if (key !== last.current) {
       last.current = key;
       setPrompt(hit ? { label: hit.label, action: hit.action } : null);
     }
   });
   return null;
+}
+
+/** A ring and a small arrow on whatever you're close enough to use. */
+function FocusMarker() {
+  const ring = useRef<THREE.Group>(null);
+  useFrame(({ clock }) => {
+    const g = ring.current;
+    if (!g) return;
+    g.visible = !!focus.current;
+    if (focus.current) {
+      g.position.set(focus.current.x, 0.04, focus.current.z);
+      g.rotation.y = clock.elapsedTime * 0.8;
+      // The ring has to clear whatever it's marking, and bigger objects have a longer reach.
+      const size = Math.max(0.8, focus.current.r * 0.5) * (1 + Math.sin(clock.elapsedTime * 3.5) * 0.06);
+      g.scale.set(size, 1, size);
+    }
+  });
+  return (
+    <group ref={ring} visible={false}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]}><ringGeometry args={[1.05, 1.22, 40]} /><meshBasicMaterial color="#f2c230" transparent opacity={0.9} toneMapped={false} /></mesh>
+    </group>
+  );
 }
 
 function Seeds() {
@@ -322,7 +412,8 @@ function WheelSign() {
   const live = useWorld((s) => s.live);
   const height = useWorld((s) => s.world?.core?.blockHeight ?? s.world?.live?.settled?.blockHeight ?? null);
   const fresh = live && (live.freshness === "online" || live.freshness === undefined);
-  const text = !live ? "WAITING FOR A READING" : !fresh ? "NO FRESH READING" : (live.rpmMilli ?? 0) > 0 ? `RUNNING  ${rpmFromMilli(live.rpmMilli!)} RPM` : "THE WHEEL IS STILL";
+  const onHub = useWorld((s) => s.ride === "hub");
+  const text = onHub ? "YOUR RUN · NOT MEASURED" : !live ? "WAITING FOR A READING" : !fresh ? "NO FRESH READING" : (live.rpmMilli ?? 0) > 0 ? `RUNNING  ${rpmFromMilli(live.rpmMilli!)} RPM` : "THE WHEEL IS STILL";
   return (
     <group position={[0, 15.4, 0]}>
       <Text font={WORLD_FONT} fontSize={1.15} color="#f2c230" anchorX="center" anchorY="middle" letterSpacing={0.05} rotation={[0, Math.PI, 0]} position={[0, 0, -0.1]}>{text}<meshBasicMaterial color="#f2c230" toneMapped={false} /></Text>
@@ -332,10 +423,75 @@ function WheelSign() {
   );
 }
 
+function HubWheel() {
+  const onHub = useWorld((s) => s.ride === "hub");
+  return <GiantWheel driver={onHub ? ride : undefined} onClick={() => { if (!useWorld.getState().ride) { audio?.portal(); useWorld.getState().setRide("hub"); } }} />;
+}
+
+/** Sparks fly off whichever wheel is being ridden, away from the way the hamster's facing. */
+function RideEffects() {
+  const where = useWorld((s) => s.ride);
+  const at = useMemo(() => {
+    if (where === "hub") return { x: 0, y: 1.1, z: 0, backX: -1, backZ: 0 };
+    const i = roomIndex("wheel");
+    const c = roomCenter(i);
+    return { x: c.x, y: 0.7, z: c.z, backX: -Math.sin(ROOM_ANGLES[i]), backZ: -Math.cos(ROOM_ANGLES[i]) };
+  }, [where]);
+  return where ? <SpeedEffects at={at} /> : null;
+}
+
+/** A plinth in the burrow that shows the visitor's own Squeek, once they've connected a wallet. */
+function Showcase() {
+  const open = useWorld((s) => s.openPanel);
+  const panel = useWorld((s) => s.panel);
+  const [art, setArt] = useState<THREE.Texture | null>(null);
+  const spin = useRef<THREE.Group>(null);
+  useEffect(() => addObstacles([{ x: SHOWCASE.x, z: SHOWCASE.z, r: 1.1 }]), []);
+  useEffect(() => {
+    if (panel) return;
+    let wallet: string | null = null;
+    try {
+      wallet = localStorage.getItem("stm.viewWallet");
+    } catch {}
+    if (!wallet) return;
+    let live = true;
+    let made: THREE.Texture | null = null;
+    fetch(`/api/v1/squeeks/owner/${wallet}`).then((r) => r.json()).then((d) => {
+      const id = d.tokens?.[0]?.tokenId;
+      return id ? fetch(`/api/v1/squeeks/${id}`).then((r) => r.json()) : null;
+    }).then((d) => {
+      if (!live || !d?.image) return;
+      new THREE.TextureLoader().load(d.image, (t) => {
+        if (!live) return t.dispose();
+        t.colorSpace = THREE.SRGBColorSpace;
+        t.magFilter = THREE.NearestFilter;
+        made = t;
+        setArt(t);
+      });
+    }).catch(() => undefined);
+    return () => {
+      live = false;
+      made?.dispose();
+    };
+  }, [panel]);
+  useFrame((_, dt) => {
+    if (spin.current) spin.current.rotation.y += dt * 0.5;
+  });
+  return (
+    <group position={[SHOWCASE.x, 0, SHOWCASE.z]} onClick={(e) => { e.stopPropagation(); if (e.delta < 6) open({ kind: "squeeks" }); }} onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "pointer"; }} onPointerOut={() => { document.body.style.cursor = ""; }}>
+      <mesh position={[0, 0.55, 0]} castShadow receiveShadow><cylinderGeometry args={[0.85, 1, 1.1, 10]} /><meshStandardMaterial color="#2d2119" roughness={1} /></mesh>
+      <mesh position={[0, 1.12, 0]}><cylinderGeometry args={[0.88, 0.88, 0.05, 28]} /><meshStandardMaterial color="#5b7cfa" emissive="#5b7cfa" emissiveIntensity={1.1} toneMapped={false} /></mesh>
+      <group ref={spin} position={[0, 2.25, 0]}>
+        <mesh castShadow><boxGeometry args={[1.5, 1.5, 0.1]} /><meshStandardMaterial color="#1a1a20" metalness={0.4} roughness={0.5} /></mesh>
+        {[1, -1].map((f) => <mesh key={f} position={[0, 0, f * 0.056]} rotation={[0, f < 0 ? Math.PI : 0, 0]}><planeGeometry args={[1.36, 1.36]} />{art ? <meshBasicMaterial map={art} toneMapped={false} /> : <meshStandardMaterial color="#5b7cfa" emissive="#5b7cfa" emissiveIntensity={0.4} />}</mesh>)}
+      </group>
+    </group>
+  );
+}
+
 function Scene({ intro, quality }: { intro: React.RefObject<{ active: boolean; progress: number }>; quality: "low" | "medium" | "high" }) {
   const player = usePlayer();
   const clickToMove = useWorld((s) => s.settings.clickToMove);
-  const openPanel = useWorld((s) => s.openPanel);
   const onFloor = (e: ThreeEvent<MouseEvent>) => {
     if (e.delta > 6 || !clickToMove) return;
     const obj = e.object as THREE.Object3D;
@@ -351,14 +507,17 @@ function Scene({ intro, quality }: { intro: React.RefObject<{ active: boolean; p
       <group onClick={onFloor}><Shells /></group>
       <WallDots />
       <Portals />
-      <GiantWheel onClick={() => openPanel({ kind: "room", room: "wheel" })} />
+      <HubWheel />
       <WheelSign />
+      <Showcase />
+      <RideEffects />
       <RoomsNear player={player} />
       <Seeds />
       {quality !== "low" && <Residents />}
       {quality !== "low" && <Sparkles count={quality === "high" ? 120 : 60} scale={[46, 12, 46]} position={[0, 6, 0]} size={2.2} speed={0.18} opacity={0.5} color="#ffcf8a" />}
       <Controller player={player} intro={intro} />
       <Proximity player={player} />
+      <FocusMarker />
       <TravelFromUrl player={player} />
       {quality === "high" && (
         <EffectComposer multisampling={0}>

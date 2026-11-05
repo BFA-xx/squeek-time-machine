@@ -97,11 +97,11 @@ export interface WorldState {
   latest: { id: string; title: string; occurredAt: string; provisional: boolean } | null;
   sources: SourceHealth[];
 }
-export interface Memory { id: string; subject: string; kind: string; body: string; createdAt: string; username: string; reactions: Record<string, number> }
-export interface CommentRow { id: string; subject: string; parentId: string | null; body: string; createdAt: string; username: string; reactions: Record<string, number> }
+export interface Memory { id: string; subject: string; kind: string; body: string; createdAt: string; username: string; displayName?: string | null; reactions: Record<string, number> }
+export interface CommentRow { id: string; subject: string; parentId: string | null; body: string; createdAt: string; username: string; displayName?: string | null; reactions: Record<string, number> }
 export interface PollRow { id: string; question: string; scope: string; createdAt: string; username: string; options: { id: string; label: string; votes: number }[]; myVote: string | null }
-export interface FeedRow { id: string; kind: string; subject: string; excerpt: string | null; createdAt: string; username: string }
-export interface Me { id: string; username: string; wallet: string | null; role: string }
+export interface FeedRow { id: string; kind: string; subject: string; excerpt: string | null; createdAt: string; username: string; displayName?: string | null }
+export interface Me { id: string; username: string; displayName: string | null; bio: string; wallet: string | null; role: string }
 export interface OriginArtifact { slug: string; shape: string; title: string; body: string; source: string }
 export interface MilestoneRow { key: string; kind: string; title: string; description: string; value: string; achievedAt: string; eventId: string | null; installationId: string }
 

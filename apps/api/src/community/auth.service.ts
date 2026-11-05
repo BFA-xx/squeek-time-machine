@@ -39,12 +39,12 @@ export class AuthService {
     if (password.length < 10 || password.length > 200) throw new BadRequestException("Use a password of at least 10 characters.");
     const lower = username.toLowerCase();
     if (await this.db.user.findUnique({ where: { usernameLower: lower } })) throw new ConflictException("That username is taken.");
-    const user = await this.db.user.create({ data: { username, usernameLower: lower, passwordHash: await hashPassword(password), profile: { create: {} } } });
+    const user = await this.db.user.create({ data: { username, usernameLower: lower, passwordHash: await hashPassword(password), profile: { create: {} } }, include: { profile: true } });
     return { user: this.publicUser(user), session: await this.createSession(user.id) };
   }
 
   async login(username: string, password: string) {
-    const user = await this.db.user.findUnique({ where: { usernameLower: username.toLowerCase() } });
+    const user = await this.db.user.findUnique({ where: { usernameLower: username.toLowerCase() }, include: { profile: true } });
     if (!user?.passwordHash || !(await checkPassword(password, user.passwordHash))) throw new UnauthorizedException("Wrong username or password.");
     if (user.bannedAt) throw new UnauthorizedException("This account has been suspended.");
     return { user: this.publicUser(user), session: await this.createSession(user.id) };
@@ -52,7 +52,7 @@ export class AuthService {
 
   async fromToken(token?: string) {
     if (!token) return null;
-    const s = await this.db.session.findUnique({ where: { tokenHash: hashToken(token) }, include: { user: true } });
+    const s = await this.db.session.findUnique({ where: { tokenHash: hashToken(token) }, include: { user: { include: { profile: true } } } });
     if (!s || s.expiresAt < new Date() || s.user.bannedAt) return null;
     return s.user;
   }
@@ -84,10 +84,10 @@ export class AuthService {
       ok = false;
     }
     if (!ok) throw new UnauthorizedException("That signature doesn't match the wallet.");
-    const owner = await this.db.user.findUnique({ where: { walletAddress: c.address } });
+    const owner = await this.db.user.findUnique({ where: { walletAddress: c.address }, include: { profile: true } });
     if (current) {
       if (owner && owner.id !== current.id) throw new ConflictException("That wallet is linked to another account.");
-      const user = await this.db.user.update({ where: { id: current.id }, data: { walletAddress: c.address } });
+      const user = await this.db.user.update({ where: { id: current.id }, data: { walletAddress: c.address }, include: { profile: true } });
       return { user: this.publicUser(user), session: null };
     }
     if (owner) {
@@ -95,12 +95,12 @@ export class AuthService {
       return { user: this.publicUser(owner), session: await this.createSession(owner.id) };
     }
     const username = `hamster_${c.address.slice(2, 10).toLowerCase()}`;
-    const user = await this.db.user.create({ data: { username, usernameLower: username, walletAddress: c.address, profile: { create: {} } } });
+    const user = await this.db.user.create({ data: { username, usernameLower: username, walletAddress: c.address, profile: { create: {} } }, include: { profile: true } });
     return { user: this.publicUser(user), session: await this.createSession(user.id) };
   }
 
-  publicUser(u: { id: string; username: string; walletAddress: string | null; role: string; createdAt: Date }) {
-    return { id: u.id, username: u.username, wallet: u.walletAddress, role: u.role, createdAt: u.createdAt };
+  publicUser(u: { id: string; username: string; walletAddress: string | null; role: string; createdAt: Date; profile?: { displayName: string | null; bio: string } | null }) {
+    return { id: u.id, username: u.username, displayName: u.profile?.displayName ?? null, bio: u.profile?.bio ?? "", wallet: u.walletAddress, role: u.role, createdAt: u.createdAt };
   }
 }
 

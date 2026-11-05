@@ -4,3 +4,4 @@ export * from "./format";
 export * from "./milestones";
 export * from "./text";
 export * from "./world";
+export * from "./dig";

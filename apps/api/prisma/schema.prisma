@@ -209,6 +209,7 @@ model User {
   walletAddress String?   @unique
   role          String    @default("member") // member | moderator
   bannedAt      DateTime?
+  usernameChangedAt DateTime?
   createdAt     DateTime  @default(now())
   profile       UserProfile?
   sessions      Session[]
@@ -219,11 +220,14 @@ model User {
   votes         PollVote[]
   contributions UserContribution[]
   reports       ModerationReport[] @relation("reporter")
+  digMembers    DigMember[]
+  digCalls      DigCall[]
 }
 
 model UserProfile {
   userId String @id
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName String?
   bio    String @default("")
 }
 
@@ -359,4 +363,63 @@ model ModerationReport {
 
   @@unique([subject, reporterId])
   @@index([status, createdAt])
+}
+
+// ─── The Great Dig. Game records worked out from official ones. They never write back. ───
+
+model DigMember {
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  installationId  String
+  crew            String
+  joinedAt        DateTime  @default(now())
+  squeekId        String?
+  squeekLevel     Int?
+  squeekCheckedAt DateTime?
+
+  @@id([userId, installationId])
+  @@index([installationId, crew])
+  @@index([squeekCheckedAt])
+}
+
+model DigShift {
+  id              String   @id // installation:index
+  installationId  String
+  index           Int
+  startRound      BigInt
+  endRound        BigInt
+  workUnits       BigInt
+  band            String
+  settledAt       DateTime
+  transactionHash String?
+
+  @@unique([installationId, index])
+  @@index([installationId, index(sort: Desc)])
+}
+
+model DigCall {
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  installationId String
+  shiftIndex     Int
+  band           String
+  crew           String
+  correct        Boolean?
+  points         Int?
+  createdAt      DateTime @default(now())
+
+  @@id([userId, installationId, shiftIndex])
+  @@index([installationId, shiftIndex])
+  @@index([installationId, crew])
+}
+
+model DigChamber {
+  installationId  String
+  number          Int
+  target          BigInt
+  brokeAt         DateTime
+  transactionHash String
+  crew            String?
+
+  @@id([installationId, number])
 }

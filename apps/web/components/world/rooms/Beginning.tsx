@@ -1,12 +1,13 @@
 "use client";
 import { Float } from "@react-three/drei";
 import { useWorld } from "@/lib/store";
+import { audio } from "@/lib/audio";
 import { Hamster } from "../Hamster";
-import { clickable, RoomSign, useSolid } from "./common";
+import { clickable, RoomSign, useSolid, useSpots } from "./common";
 
 const ARTIFACTS = [
-  { slug: "squeektoshi", a: -2.5 }, { slug: "care-policy", a: -1.8 }, { slug: "wheely", a: -1.1 }, { slug: "three-clocks", a: -0.4 },
-  { slug: "proof", a: 0.4 }, { slug: "squeeks", a: 1.1 }, { slug: "sqk", a: 1.8 }, { slug: "testnet", a: 2.5 },
+  { slug: "squeektoshi", a: -2.5, name: "Squeektoshi" }, { slug: "care-policy", a: -1.8, name: "the care policy" }, { slug: "wheely", a: -1.1, name: "the WHEELY9000" }, { slug: "three-clocks", a: -0.4, name: "the three clocks" },
+  { slug: "proof", a: 0.4, name: "hamster proof of work" }, { slug: "squeeks", a: 1.1, name: "Squeeks" }, { slug: "sqk", a: 1.8, name: "SQK" }, { slug: "testnet", a: 2.5, name: "the testnet sign" },
 ];
 const place = (a: number): [number, number] => [Math.sin(a) * 10.5, -Math.cos(a) * 10.5 + 1];
 
@@ -26,6 +27,10 @@ function Artifact({ slug }: { slug: string }) {
 export default function BeginningRoom({ index }: { index: number }) {
   const open = useWorld((s) => s.openPanel);
   useSolid(index, ARTIFACTS.map((x) => { const [lx, lz] = place(x.a); return [lx, lz, 1]; }));
+  useSpots(index, ARTIFACTS.map((x) => {
+    const [lx, lz] = place(x.a);
+    return { key: `artifact-${x.slug}`, lx, lz, r: 3.2, label: `Read about ${x.name}`, action: () => { audio?.select(); open({ kind: "artifact", slug: x.slug }); } };
+  }), "static");
   return (
     <group>
       <RoomSign text="The Beginning" color="#f2c230" />

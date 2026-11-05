@@ -10,7 +10,9 @@ import { useLoadMe, useMe } from "../panels/account";
 import { SEEDS } from "../panels/discoveries";
 import { PanelContent } from "../panels/PanelContent";
 import { input } from "../world/input";
+import { rideTap } from "../world/ride";
 import { LiveBadge, SourceBanner } from "./LiveBadge";
+import { RidePanel } from "./RidePanel";
 
 const World = dynamic(() => import("../world/World"), { ssr: false });
 
@@ -57,9 +59,10 @@ function Walkthrough({ onDone }: { onDone: () => void }) {
   const [step, setStep] = useState(0);
   const steps = [
     { t: "This is the burrow", b: "Squeektoshi's whole history, built underground. It grows on its own as real blocks settle." },
-    { t: "Walk around", b: "Use WASD or the arrow keys, click the floor, or use the stick on a phone. Drag to look around." },
-    { t: "Seven tunnels", b: "Each glowing arch leads to a room. Walk in, or jump there using the bar at the bottom." },
-    { t: "Leave your mark", b: "Open any moment and add an I WAS HERE memory. Golden seeds are hidden around the world too." },
+    { t: "Walk around", b: "Use WASD or the arrow keys, click the floor, use the stick on a phone, or plug in a controller. Drag to look around." },
+    { t: "Eight tunnels", b: "Each glowing arch leads to a room. Walk in, or jump there using the bar at the bottom." },
+    { t: "Play The Great Dig", b: "Straight through the wheel, join a crew and call what the wheel will do next. Real settled rounds decide who was right." },
+    { t: "Use what you find", b: "Walk up to anything with a gold ring and press E. Read the artifacts, run the practice wheel, hang a memory lantern. Golden seeds are hidden around too." },
   ];
   const s = steps[step];
   return (
@@ -87,6 +90,7 @@ export function Experience() {
   const { panel, openPanel, closePanel, backPanel, history, location, prompt, requestTravel, toasts, world, settings, setSettings, found, dropToast } = useWorld();
   const me = useMe((s) => s.me);
   const live = useWorld((s) => s.live);
+  const riding = useWorld((s) => s.ride);
 
   useEffect(() => {
     const s = loadSettings();
@@ -109,18 +113,34 @@ export function Experience() {
     const typing = (t: EventTarget | null) => t instanceof HTMLElement && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
     const down = (e: KeyboardEvent) => {
       if (typing(e.target)) return;
+      if (useWorld.getState().ride) {
+        if (e.code === "Escape" || e.code === "KeyE") useWorld.getState().setRide(false);
+        else if (e.code === "ShiftLeft" || e.code === "ShiftRight") input.keyBoost = 1;
+        else if ((e.code === "Space" || e.code === "KeyW" || e.code === "ArrowUp") && !e.repeat) {
+          e.preventDefault();
+          rideTap();
+        }
+        return;
+      }
       if (e.code === "Escape") closePanel();
       if ((e.code === "KeyE" || e.code === "Enter") && !useWorld.getState().panel) {
         const p = useWorld.getState().prompt;
         if (p && !(e.target instanceof HTMLButtonElement || e.target instanceof HTMLAnchorElement)) p.action();
       }
+      if (e.code === "ShiftLeft" || e.code === "ShiftRight") input.keyBoost = 1;
       if (/^(Key[WASD]|Arrow)/.test(e.code)) {
         input.keys.add(e.code);
         if (e.code.startsWith("Arrow")) e.preventDefault();
       }
     };
-    const up = (e: KeyboardEvent) => input.keys.delete(e.code);
-    const blur = () => input.keys.clear();
+    const up = (e: KeyboardEvent) => {
+      input.keys.delete(e.code);
+      if (e.code === "ShiftLeft" || e.code === "ShiftRight") input.keyBoost = 0;
+    };
+    const blur = () => {
+      input.keys.clear();
+      input.keyBoost = 0;
+    };
     window.addEventListener("keydown", down);
     window.addEventListener("keyup", up);
     window.addEventListener("blur", blur);
@@ -193,7 +213,7 @@ export function Experience() {
               <>
                 <img src="/brand/squeekchain-mark.png" alt="" width={64} height={64} />
                 <h1 className="title text-6xl sm:text-8xl mt-3 text-ink">Squeek Time Machine</h1>
-                <p className="font-voice text-dim mt-2 text-lg">Don't just read Squeekchain's history. Walk through it.</p>
+                <p className="font-voice text-dim mt-2 text-lg">Walk Squeekchain's history. Then join the dig his real rounds are driving.</p>
                 {world?.counts && <p className="label mt-2">{formatInt(world.counts.blocks)} blocks · {formatInt(world.counts.events)} events · growing on its own</p>}
                 <div className="flex flex-wrap justify-center gap-2 mt-5">
                   <button autoFocus className="btn btn-gold text-sm px-6 py-3" onClick={enter}>Enter the burrow</button>
@@ -219,15 +239,17 @@ export function Experience() {
               <div className="flex items-center gap-2">
                 <img src="/brand/squeekchain-mark.png" alt="" width={26} height={26} />
                 <h1 className="title text-2xl truncate">{LOCATION_LABEL(location)}</h1>
+                {location !== "hub" && location !== "tunnel" && <button className="btn bg-bg/70 py-1" onClick={() => openPanel({ kind: "room", room: location })}>About this room</button>}
               </div>
               <div className="bg-bg/60 px-2 py-1 w-fit"><LiveBadge /></div>
               <SourceBanner compact />
               {found.length > 0 && <p className="label bg-bg/60 px-2 py-1 w-fit">{found.length}/{SEEDS.length} golden seeds</p>}
             </div>
-            <nav aria-label="Tools" className="pointer-events-auto flex justify-end gap-1 self-end md:self-auto shrink-0">
+            <nav aria-label="Tools" className="pointer-events-auto flex flex-wrap justify-end gap-1 self-end md:self-auto">
+              <button className="btn bg-bg/70" onClick={() => openPanel({ kind: "squeeks" })}>My Squeeks</button>
               <button className="btn bg-bg/70" aria-label="Search history" onClick={() => openPanel({ kind: "search" })}>Search</button>
-              <button className="btn bg-bg/70" aria-pressed={settings.sound} onClick={() => { const on = !settings.sound; setSettings({ sound: on }); if (on) audio?.enable(settings.volume); else audio?.disable(); }}>{settings.sound ? "Sound on" : "Sound off"}</button>
-              <button className="btn bg-bg/70" onClick={() => openPanel({ kind: "settings" })}>Settings</button>
+              <button className="btn bg-bg/70" aria-pressed={settings.sound} aria-label={settings.sound ? "Sound on" : "Sound off"} onClick={() => { const on = !settings.sound; setSettings({ sound: on }); if (on) audio?.enable(settings.volume); else audio?.disable(); }}>{settings.sound ? "♪" : "♪̸"}</button>
+              <button className="btn bg-bg/70" aria-label="Settings" onClick={() => openPanel({ kind: "settings" })}>⚙</button>
               <button className="btn bg-bg/70" onClick={() => openPanel({ kind: "account" })}>{me ? me.username : "Sign in"}</button>
             </nav>
           </header>
@@ -242,9 +264,10 @@ export function Experience() {
             )}
           </AnimatePresence>
 
-          <Joystick />
+          {!riding && <Joystick />}
+          {riding && <RidePanel />}
 
-          <nav aria-label="Rooms" className="absolute bottom-3 inset-x-0 z-10 flex justify-center px-2">
+          <nav aria-label="Rooms" className={`absolute bottom-3 inset-x-0 z-10 flex justify-center px-2 ${riding ? "hidden" : ""}`}>
             <ul className="flex gap-1 overflow-x-auto scrollbar-thin bg-bg/70 p-1 max-w-full">
               <li><button className={`btn whitespace-nowrap ${location === "hub" ? "border-gold text-gold" : ""}`} onClick={() => requestTravel("hub")}>Burrow</button></li>
               {ROOMS.map((r) => (

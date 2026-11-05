@@ -27,6 +27,7 @@ export function ArchiveHome() {
         <header className="flex flex-wrap items-center justify-between gap-3">
           <a href="/" className="flex items-center gap-2"><img src="/brand/squeekchain-mark.png" alt="" width={32} height={32} /><h1 className="title text-3xl">Squeek Time Machine</h1></a>
           <div className="flex flex-wrap gap-2">
+            <button className="btn" onClick={() => open({ kind: "squeeks" })}>My Squeeks</button>
             <button className="btn" onClick={() => open({ kind: "search" })}>Search</button>
             <button className="btn" onClick={() => open({ kind: "account" })}>{me ? me.username : "Sign in"}</button>
             <a className="btn btn-gold" href="/">Enter the 3D world</a>

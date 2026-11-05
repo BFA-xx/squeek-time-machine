@@ -82,7 +82,7 @@ describe("community content", () => {
     await screen.findByText(/No memories here yet/);
   });
   it("posts a memory for a signed-in visitor", async () => {
-    useMe.setState({ me: { id: "1", username: "ann", wallet: null, role: "member" }, loaded: true });
+    useMe.setState({ me: { id: "1", username: "ann", displayName: null, bio: "", wallet: null, role: "member" }, loaded: true });
     mockApi({ "/community/memories": [] });
     render(<IWasHere subject="event:abc" />);
     fireEvent.change(screen.getByPlaceholderText("I was here when…"), { target: { value: "hello" } });
@@ -90,7 +90,7 @@ describe("community content", () => {
     await waitFor(() => expect((fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls.some(([u, i]) => String(u).includes("/community/memories") && i?.method === "POST" && String(i.body).includes("hello"))).toBe(true));
   });
   it("shows the server's refusal", async () => {
-    useMe.setState({ me: { id: "1", username: "ann", wallet: null, role: "member" }, loaded: true });
+    useMe.setState({ me: { id: "1", username: "ann", displayName: null, bio: "", wallet: null, role: "member" }, loaded: true });
     vi.stubGlobal("fetch", vi.fn(async (_u: string, i?: RequestInit) => (i?.method === "POST" ? new Response(JSON.stringify({ message: "Links aren't allowed here" }), { status: 400 }) : new Response("[]", { status: 200 }))));
     render(<IWasHere subject="event:abc" />);
     fireEvent.change(screen.getByPlaceholderText("I was here when…"), { target: { value: "x" } });
@@ -133,5 +133,127 @@ describe("the future", () => {
   it("labels predictions apart from facts", () => {
     render(<><VerifyTag v="community" /><VerifyTag v="verified" /><VerifyTag v="official" /><VerifyTag v="unconfirmed" /></>);
     for (const t of ["Community prediction", "Verified fact", "Official docs", "Unconfirmed"]) expect(screen.getByText(t)).toBeInTheDocument();
+  });
+});
+
+describe("profile editing", () => {
+  it("saves name, username and about through the API", async () => {
+    const { ProfileForm } = await import("@/components/panels/account");
+    useMe.setState({ me: { id: "1", username: "ann", displayName: null, bio: "", wallet: null, role: "member" }, loaded: true });
+    const calls: { url: string; body: string }[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), body: String(init?.body) });
+      return new Response(JSON.stringify({ user: { id: "1", username: "ann_2", displayName: "Ann", bio: "hi", wallet: null, role: "member" } }), { status: 200 });
+    }));
+    render(<ProfileForm />);
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Ann" } });
+    fireEvent.change(screen.getByLabelText(/^Username/), { target: { value: "ann_2" } });
+    fireEvent.click(screen.getByText("Save profile"));
+    expect(await screen.findByRole("status")).toHaveTextContent("Saved");
+    expect(calls[0].url).toContain("/users/me/profile");
+    expect(JSON.parse(calls[0].body)).toMatchObject({ displayName: "Ann", username: "ann_2" });
+    expect(useMe.getState().me?.username).toBe("ann_2");
+  });
+  it("shows why a change was refused", async () => {
+    const { ProfileForm } = await import("@/components/panels/account");
+    useMe.setState({ me: { id: "1", username: "ann", displayName: null, bio: "", wallet: null, role: "member" }, loaded: true });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ message: "That username is taken." }), { status: 409 })));
+    render(<ProfileForm />);
+    fireEvent.click(screen.getByText("Save profile"));
+    expect(await screen.findByRole("alert")).toHaveTextContent("taken");
+  });
+});
+
+describe("The Great Dig", () => {
+  const state = {
+    status: "available", round: "300", frontier: "290", work: "4250",
+    chamber: { number: 5, from: "4000", target: "5000", progressBps: 2500 },
+    shift: { open: { index: 9, startsAt: "2026-11-06T02:00:00.000Z", endsAt: "2026-11-06T08:00:00.000Z", locksAt: "2026-11-06T02:00:00.000Z", calls: 3, startRound: "325", endRound: "360" }, running: { index: 8, startsAt: "2026-11-05T20:00:00.000Z", endsAt: "2026-11-06T02:00:00.000Z", picks: { asleep: 1, stirring: 0, running: 2, sprinting: 0 } } },
+    results: [{ index: 7, band: "running", workUnits: "420", settledAt: "2026-11-05T20:10:00.000Z", transactionHash: "0xabc0000000000000000000", picks: { asleep: 0, stirring: 1, running: 1, sprinting: 0 } }],
+    chambers: [{ number: 4, target: "4000", brokeAt: "2026-11-05T05:00:00.000Z", transactionHash: "0xdef0000000000000000000", crew: "sandbath" }],
+    crews: [{ slug: "nightshift", name: "The Night Shift", color: "#000", motto: "m", points: 12, members: 2, chambers: 0 }, { slug: "sandbath", name: "Sand Bath", color: "#000", motto: "m", points: 40, members: 1, chambers: 1 }],
+    leaderboard: [{ username: "ann", displayName: "Ann", points: 40, wins: 1, crew: "sandbath", squeekId: "322", squeekLevel: 2 }],
+    me: null,
+  };
+  it("shows real progress, the open call and that it's free", async () => {
+    const { DigPanel } = await import("@/components/panels/dig");
+    mockApi({ "/dig": state, "/auth/me": { user: null } });
+    render(<DigPanel />);
+    expect(await screen.findByText("Chamber 5")).toBeInTheDocument();
+    expect(screen.getByText(/4,250 of 5,000 settled work/)).toBeInTheDocument();
+    expect(screen.getByText(/Call shift 9/)).toBeInTheDocument();
+    expect(screen.getByText(/Points have no value/)).toBeInTheDocument();
+    expect(screen.getByText(/claimed by Sand Bath/)).toBeInTheDocument();
+    expect(screen.getByText(/Squeek #322 · Lv 2/)).toBeInTheDocument();
+    expect(screen.getByText(/1 of 2 called it/)).toBeInTheDocument();
+  });
+  it("sends a guest to sign in instead of failing", async () => {
+    const { DigPanel } = await import("@/components/panels/dig");
+    mockApi({ "/dig": state, "/auth/me": { user: null } });
+    render(<DigPanel />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Asleep/ }));
+    expect(useWorld.getState().panel).toEqual({ kind: "account" });
+  });
+  it("locks the buttons once a call is made", async () => {
+    const { DigPanel } = await import("@/components/panels/dig");
+    useMe.setState({ me: { id: "1", username: "ann", displayName: null, bio: "", wallet: null, role: "member" }, loaded: true });
+    mockApi({ "/dig/squeeks": { wallet: null, squeeks: [] }, "/dig": { ...state, me: { crew: "sandbath", squeekId: null, squeekLevel: null, openCall: "running", points: 40, wins: 1, played: 2, streak: 1, recent: [{ shiftIndex: 7, band: "running", correct: true, points: 40 }] } } });
+    render(<DigPanel />);
+    expect(await screen.findByText(/You called Running/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Asleep/ })).toBeDisabled();
+    expect(screen.getByText(/You were right: \+40/)).toBeInTheDocument();
+  });
+  it("explains when the dig can't run", async () => {
+    const { DigPanel } = await import("@/components/panels/dig");
+    mockApi({ "/dig": { status: "unavailable", reason: "The round clock isn't known yet." }, "/auth/me": { user: null } });
+    render(<DigPanel />);
+    expect(await screen.findByText(/round clock/)).toBeInTheDocument();
+  });
+});
+
+describe("My Squeeks", () => {
+  const W = "0x8535a46fe5fd088732cf98a63dfbc98d4f038082";
+  const owned = { wallet: W, installationId: "rel-1", partial: false, counts: null, claimableBaseUnits: "2000000000000000000", power: null, tokens: [{ tokenId: "322", custody: "staking", level: 2, basePower: "2200", nextMergeHeight: "0", mergeState: "ready" }, { tokenId: "323", custody: "wallet", level: 1, basePower: "1000", nextMergeHeight: "0", mergeState: "ready" }] };
+  beforeEach(() => { localStorage.clear(); });
+  it("lets a visitor view by pasted address, with no wallet in the browser", async () => {
+    const { SqueeksPanel } = await import("@/components/panels/squeeks");
+    mockApi({ "/squeeks/owner/": owned, "/auth/me": { user: null } });
+    render(<SqueeksPanel />);
+    fireEvent.click(screen.getByText("Connect wallet"));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/No wallet found/);
+    fireEvent.change(screen.getByPlaceholderText(/paste a wallet address/), { target: { value: W } });
+    fireEvent.click(screen.getByText("View"));
+    expect(await screen.findByText("#322")).toBeInTheDocument();
+    expect(screen.getByText(/Lv 2 · Staked/)).toBeInTheDocument();
+    expect(screen.getByText(/Squeeks held in a wallet earn nothing/)).toBeInTheDocument();
+    expect(screen.getByText(/no monetary value/)).toBeInTheDocument();
+  });
+  it("connects with an account request only, never a signature", async () => {
+    const { SqueeksPanel } = await import("@/components/panels/squeeks");
+    mockApi({ "/squeeks/owner/": owned, "/auth/me": { user: null } });
+    const request = vi.fn(async () => [W]);
+    vi.stubGlobal("ethereum", { request });
+    window.ethereum = { request } as never;
+    render(<SqueeksPanel />);
+    fireEvent.click(screen.getByText("Connect wallet"));
+    expect(await screen.findByText("#322")).toBeInTheDocument();
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith({ method: "eth_requestAccounts" });
+    delete (window as { ethereum?: unknown }).ethereum;
+  });
+  it("uses a signed-in member's linked wallet without asking", async () => {
+    const { SqueeksPanel } = await import("@/components/panels/squeeks");
+    useMe.setState({ me: { id: "1", username: "ann", displayName: null, bio: "", wallet: W, role: "member" }, loaded: true });
+    mockApi({ "/squeeks/owner/": owned });
+    render(<SqueeksPanel />);
+    expect(await screen.findByText("#322")).toBeInTheDocument();
+  });
+  it("says so when the API is down, rather than showing an empty wallet", async () => {
+    const { SqueeksPanel } = await import("@/components/panels/squeeks");
+    useMe.setState({ me: { id: "1", username: "ann", displayName: null, bio: "", wallet: W, role: "member" }, loaded: true });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ message: "The official API can't show this wallet's Squeeks right now." }), { status: 503 })));
+    render(<SqueeksPanel />);
+    expect(await screen.findByText(/can't show this wallet/)).toBeInTheDocument();
+    expect(screen.queryByText(/doesn't hold any Squeeks/)).toBeNull();
   });
 });

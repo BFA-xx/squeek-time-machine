@@ -1,11 +1,12 @@
 export const ROOMS = [
-  { slug: "beginning", name: "The Beginning", tagline: "Where the wheel started turning", color: "#f2c230", angle: 0 },
-  { slug: "timeline", name: "The Timeline", tagline: "Walk through everything that happened", color: "#5b7cfa", angle: 1 },
-  { slug: "wheel", name: "The Wheel Room", tagline: "WHEELY9000, measured", color: "#ffc048", angle: 2 },
-  { slug: "vault", name: "The Block Vault", tagline: "Every Squeek block, on the shelf", color: "#35d07f", angle: 3 },
-  { slug: "evolution", name: "The Evolution Room", tagline: "How the numbers grew", color: "#a8baff", angle: 4 },
-  { slug: "community", name: "The Community Archive", tagline: "I was here", color: "#f08fb0", angle: 5 },
-  { slug: "future", name: "The Future", tagline: "What's still locked", color: "#fdfbc8", angle: 6 },
+  { slug: "dig", name: "The Great Dig", tagline: "Call the shift. Real rounds decide.", color: "#ff8a3d", angle: 0 },
+  { slug: "beginning", name: "The Beginning", tagline: "Where the wheel started turning", color: "#f2c230", angle: 1 },
+  { slug: "timeline", name: "The Timeline", tagline: "Walk through everything that happened", color: "#5b7cfa", angle: 2 },
+  { slug: "wheel", name: "The Wheel Room", tagline: "WHEELY9000, measured", color: "#ffc048", angle: 3 },
+  { slug: "vault", name: "The Block Vault", tagline: "Every Squeek block, on the shelf", color: "#35d07f", angle: 4 },
+  { slug: "evolution", name: "The Evolution Room", tagline: "How the numbers grew", color: "#a8baff", angle: 5 },
+  { slug: "community", name: "The Community Archive", tagline: "I was here", color: "#f08fb0", angle: 6 },
+  { slug: "future", name: "The Future", tagline: "What's still locked", color: "#fdfbc8", angle: 7 },
 ] as const;
 export type RoomSlug = (typeof ROOMS)[number]["slug"];
 

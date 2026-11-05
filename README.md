@@ -1,13 +1,16 @@
 # Squeek Time Machine
 
-A living 3D archive of Squeekchain. Visitors walk a hamster through an underground burrow where every pillar, block and door is backed by a real record, and the world grows by itself as new blocks settle.
+A living 3D world built on Squeekchain, with a game at its centre. Visitors walk a hamster through an underground burrow where every pillar, block and door is backed by a real record, and The Great Dig turns real settled rounds into a game communities play together.
 
 **Community-built. Not made or endorsed by the Squeekchain team.** Squeekchain runs on the Sepolia testnet, where SQK and Squeeks have no monetary value.
 
 ## What's in it
 
 - **The burrow:** a walkable hub with a giant WHEELY9000 that turns only when the real wheel is measured turning.
-- **Seven rooms:** The Beginning, The Timeline, The Wheel Room, The Block Vault, The Evolution Room, The Community Archive and The Future.
+- **The Great Dig:** a free crew game that settles on real rounds. Every 1,000 settled work breaks through a chamber, and players call what the wheel will do in each six-hour shift.
+- **Seven more rooms:** The Beginning, The Timeline, The Wheel Room, The Block Vault, The Evolution Room, The Community Archive and The Future. Walk up to anything with a gold ring to use it.
+- **Practice wheel:** run on a wheel yourself and try to match Squeektoshi's measured top speed. It's clearly separate from real data.
+- **Controllers:** keyboard, mouse, touch and PS5 DualSense.
 - **Living world engine:** pulls from the official API and the contract's logs, removes duplicates, resumes after interruptions and keeps the last good copy during outages.
 - **I WAS HERE:** visitors attach memories to specific records, kept apart from the official data.
 - **Sharing:** every event and block has its own page and preview image.

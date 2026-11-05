@@ -27,7 +27,11 @@ export type Panel =
   | { kind: "search" }
   | { kind: "settings" }
   | { kind: "account" }
-  | { kind: "discovery"; slug: string };
+  | { kind: "discovery"; slug: string }
+  | { kind: "write"; mode: "memory" | "expectation" }
+  | { kind: "dig"; focus?: "call" | "crew" }
+  | { kind: "squeeks" }
+  | { kind: "squeek"; id: string };
 
 export interface Live extends Measurement {
   provisional?: boolean;
@@ -72,6 +76,13 @@ interface WorldStore {
   setConnection: (c: "connecting" | "live" | "lost") => void;
   found: string[];
   markFound: (slug: string) => void;
+  /** Which wheel the visitor is running on, if any. */
+  ride: false | "hub" | "wheel";
+  setRide: (on: false | "hub" | "wheel") => void;
+  digBump: number;
+  bumpDig: () => void;
+  digMe: { crew: string | null; squeekLevel: number | null } | null;
+  setDigMe: (m: { crew: string | null; squeekLevel: number | null } | null) => void;
 }
 
 let toastId = 0;
@@ -118,6 +129,12 @@ export const useWorld = create<WorldStore>((set, get) => ({
   setHighlightBlock: (highlightBlock) => set({ highlightBlock }),
   connection: "connecting",
   setConnection: (connection) => set({ connection }),
+  ride: false,
+  setRide: (ride) => set({ ride }),
+  digBump: 0,
+  bumpDig: () => set((s) => ({ digBump: s.digBump + 1 })),
+  digMe: null,
+  setDigMe: (digMe) => set({ digMe }),
   found: [],
   markFound: (slug) => {
     const found = [...new Set([...get().found, slug])];
