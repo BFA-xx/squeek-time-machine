@@ -3,6 +3,7 @@ import { ROOMS, formatInt } from "@stm/shared";
 import { AnimatePresence, motion } from "framer-motion";
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
+import { api } from "@/lib/api";
 import { audio } from "@/lib/audio";
 import { loadSettings, useWorld } from "@/lib/store";
 import { useLiveWorld } from "@/lib/use-live";
@@ -10,7 +11,14 @@ import { useLoadMe, useMe } from "../panels/account";
 import { SEEDS } from "../panels/discoveries";
 import { PanelContent } from "../panels/PanelContent";
 import { input } from "../world/input";
-import { LiveBadge, SourceBanner } from "./LiveBadge";
+import { rideTap } from "../world/ride";
+import { EMOTES } from "@stm/shared";
+import { refreshMultiplayer, sendEmote, startMultiplayer, stopMultiplayer } from "@/lib/multiplayer";
+import { hopStart } from "../world/hop";
+import { API_OFFLINE } from "@/lib/api";
+import { LiveBadge, OFFLINE_NOTICE, SourceBanner } from "./LiveBadge";
+import { PlayersPill } from "./PlayersPill";
+import { RidePanel } from "./RidePanel";
 
 const World = dynamic(() => import("../world/World"), { ssr: false });
 
@@ -57,9 +65,10 @@ function Walkthrough({ onDone }: { onDone: () => void }) {
   const [step, setStep] = useState(0);
   const steps = [
     { t: "This is the burrow", b: "Squeektoshi's whole history, built underground. It grows on its own as real blocks settle." },
-    { t: "Walk around", b: "Use WASD or the arrow keys, click the floor, or use the stick on a phone. Drag to look around." },
-    { t: "Seven tunnels", b: "Each glowing arch leads to a room. Walk in, or jump there using the bar at the bottom." },
-    { t: "Leave your mark", b: "Open any moment and add an I WAS HERE memory. Golden seeds are hidden around the world too." },
+    { t: "Walk around", b: "Use WASD or the arrow keys, click the floor, use the stick on a phone, or plug in a controller and hold R1 to sprint. Drag to look around. X or Space hops when there's nothing nearby to use." },
+    { t: "Eight tunnels", b: "Each glowing arch leads to a room. Walk in, or jump there using the bar at the bottom." },
+    { t: "Play The Great Dig", b: "Straight through the wheel, join a crew and call what the wheel will do next. Real settled rounds decide who was right." },
+    { t: "Use what you find", b: "Walk up to anything with a gold ring and press E. Read the artifacts, run the practice wheel, hang a memory lantern. Golden seeds are hidden around too." },
   ];
   const s = steps[step];
   return (
@@ -83,10 +92,26 @@ export function Experience() {
   const [ready, setReady] = useState(false);
   const [canRender, setCanRender] = useState(true);
   const [stage, setStage] = useState<"title" | "flying" | "world">("title");
+  const meId = useMe((s) => s.me?.id);
+  const online = useWorld((s) => s.settings.online);
+  const inWorld = stage !== "title";
+  const signedInBefore = useRef(false);
+  // You only appear to other players once you've actually walked in.
+  useEffect(() => {
+    if (!online || !inWorld) return;
+    startMultiplayer();
+    return stopMultiplayer;
+  }, [online, inWorld]);
+  useEffect(() => {
+    // Signing in or out changes who you are to everyone else.
+    if (signedInBefore.current) refreshMultiplayer();
+    signedInBefore.current = true;
+  }, [meId]);
   const [walkthrough, setWalkthrough] = useState(false);
   const { panel, openPanel, closePanel, backPanel, history, location, prompt, requestTravel, toasts, world, settings, setSettings, found, dropToast } = useWorld();
   const me = useMe((s) => s.me);
   const live = useWorld((s) => s.live);
+  const riding = useWorld((s) => s.ride);
 
   useEffect(() => {
     const s = loadSettings();
@@ -94,7 +119,21 @@ export function Experience() {
     try {
       f = JSON.parse(localStorage.getItem("stm.found") ?? "[]");
     } catch {}
-    useWorld.setState({ settings: s, found: f });
+    let character: string | null = null;
+    try {
+      character = localStorage.getItem("stm.character");
+    } catch {}
+    useWorld.setState({ settings: s, found: f, character });
+    // A character only lasts while the connected wallet still holds it.
+    let wallet: string | null = null;
+    try {
+      wallet = localStorage.getItem("stm.viewWallet");
+    } catch {}
+    if (character && wallet) {
+      api<{ tokens: { tokenId: string }[] }>(`/squeeks/owner/${wallet}`).then((d) => {
+        if (!d.tokens.some((t) => t.tokenId === character)) useWorld.getState().setCharacter(null);
+      }).catch(() => undefined);
+    }
     const q = new URLSearchParams(window.location.search);
     if (s.reducedMotion || q.has("moment") || q.has("block") || q.has("room")) setStage("world");
     setCanRender(hasWebGL());
@@ -109,18 +148,43 @@ export function Experience() {
     const typing = (t: EventTarget | null) => t instanceof HTMLElement && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
     const down = (e: KeyboardEvent) => {
       if (typing(e.target)) return;
+      if (useWorld.getState().ride) {
+        if (e.code === "Escape" || e.code === "KeyE") useWorld.getState().setRide(false);
+        else if (e.code === "ShiftLeft" || e.code === "ShiftRight") input.keyBoost = 1;
+        else if ((e.code === "Space" || e.code === "KeyW" || e.code === "ArrowUp") && !e.repeat) {
+          e.preventDefault();
+          rideTap();
+        }
+        return;
+      }
       if (e.code === "Escape") closePanel();
+      if (!useWorld.getState().panel) {
+        const n = /^Digit([1-4])$/.exec(e.code);
+        if (n) sendEmote(EMOTES[Number(n[1]) - 1]);
+        // The same rule as X on a controller: it only hops when there's nothing else to use.
+        if (e.code === "Space" && !e.repeat && !useWorld.getState().prompt && !(e.target instanceof HTMLButtonElement || e.target instanceof HTMLAnchorElement)) {
+          e.preventDefault();
+          hopStart();
+        }
+      }
       if ((e.code === "KeyE" || e.code === "Enter") && !useWorld.getState().panel) {
         const p = useWorld.getState().prompt;
         if (p && !(e.target instanceof HTMLButtonElement || e.target instanceof HTMLAnchorElement)) p.action();
       }
+      if (e.code === "ShiftLeft" || e.code === "ShiftRight") input.keyBoost = 1;
       if (/^(Key[WASD]|Arrow)/.test(e.code)) {
         input.keys.add(e.code);
         if (e.code.startsWith("Arrow")) e.preventDefault();
       }
     };
-    const up = (e: KeyboardEvent) => input.keys.delete(e.code);
-    const blur = () => input.keys.clear();
+    const up = (e: KeyboardEvent) => {
+      input.keys.delete(e.code);
+      if (e.code === "ShiftLeft" || e.code === "ShiftRight") input.keyBoost = 0;
+    };
+    const blur = () => {
+      input.keys.clear();
+      input.keyBoost = 0;
+    };
     window.addEventListener("keydown", down);
     window.addEventListener("keyup", up);
     window.addEventListener("blur", blur);
@@ -193,13 +257,14 @@ export function Experience() {
               <>
                 <img src="/brand/squeekchain-mark.png" alt="" width={64} height={64} />
                 <h1 className="title text-6xl sm:text-8xl mt-3 text-ink">Squeek Time Machine</h1>
-                <p className="font-voice text-dim mt-2 text-lg">Don't just read Squeekchain's history. Walk through it.</p>
+                <p className="font-voice text-dim mt-2 text-lg">Walk Squeekchain's history. Then join the dig his real rounds are driving.</p>
                 {world?.counts && <p className="label mt-2">{formatInt(world.counts.blocks)} blocks · {formatInt(world.counts.events)} events · growing on its own</p>}
                 <div className="flex flex-wrap justify-center gap-2 mt-5">
                   <button autoFocus className="btn btn-gold text-sm px-6 py-3" onClick={enter}>Enter the burrow</button>
                   <button className="btn text-sm px-6 py-3" onClick={() => { setStage("world"); }}>Skip the intro</button>
                   <a className="btn text-sm px-6 py-3" href="/archive">Use the 2D archive</a>
                 </div>
+                {API_OFFLINE && <p role="status" className="text-xs text-amber mt-4 max-w-md">{OFFLINE_NOTICE}</p>}
                 <p className="text-xs text-gray mt-4 max-w-md">Community-built. Not made or endorsed by the Squeekchain team. Testnet data with no monetary value.</p>
               </>
             ) : (
@@ -219,15 +284,18 @@ export function Experience() {
               <div className="flex items-center gap-2">
                 <img src="/brand/squeekchain-mark.png" alt="" width={26} height={26} />
                 <h1 className="title text-2xl truncate">{LOCATION_LABEL(location)}</h1>
+                {location !== "hub" && location !== "tunnel" && <button className="btn bg-bg/70 py-1" onClick={() => openPanel({ kind: "room", room: location })}>About this room</button>}
               </div>
               <div className="bg-bg/60 px-2 py-1 w-fit"><LiveBadge /></div>
-              <SourceBanner compact />
+              {!riding && <SourceBanner compact />}
+              {!riding && <PlayersPill />}
               {found.length > 0 && <p className="label bg-bg/60 px-2 py-1 w-fit">{found.length}/{SEEDS.length} golden seeds</p>}
             </div>
-            <nav aria-label="Tools" className="pointer-events-auto flex justify-end gap-1 self-end md:self-auto shrink-0">
+            <nav aria-label="Tools" className="pointer-events-auto flex flex-wrap justify-end gap-1 self-end md:self-auto">
+              <button className="btn bg-bg/70" onClick={() => openPanel({ kind: "squeeks" })}>My Squeeks</button>
               <button className="btn bg-bg/70" aria-label="Search history" onClick={() => openPanel({ kind: "search" })}>Search</button>
-              <button className="btn bg-bg/70" aria-pressed={settings.sound} onClick={() => { const on = !settings.sound; setSettings({ sound: on }); if (on) audio?.enable(settings.volume); else audio?.disable(); }}>{settings.sound ? "Sound on" : "Sound off"}</button>
-              <button className="btn bg-bg/70" onClick={() => openPanel({ kind: "settings" })}>Settings</button>
+              <button className="btn bg-bg/70" aria-pressed={settings.sound} aria-label={settings.sound ? "Sound on" : "Sound off"} onClick={() => { const on = !settings.sound; setSettings({ sound: on }); if (on) audio?.enable(settings.volume); else audio?.disable(); }}>{settings.sound ? "♪" : "♪̸"}</button>
+              <button className="btn bg-bg/70" aria-label="Settings" onClick={() => openPanel({ kind: "settings" })}>⚙</button>
               <button className="btn bg-bg/70" onClick={() => openPanel({ kind: "account" })}>{me ? me.username : "Sign in"}</button>
             </nav>
           </header>
@@ -242,9 +310,10 @@ export function Experience() {
             )}
           </AnimatePresence>
 
-          <Joystick />
+          {!riding && <Joystick />}
+          {riding && <RidePanel />}
 
-          <nav aria-label="Rooms" className="absolute bottom-3 inset-x-0 z-10 flex justify-center px-2">
+          <nav aria-label="Rooms" className={`absolute bottom-3 inset-x-0 z-10 flex justify-center px-2 ${riding ? "hidden" : ""}`}>
             <ul className="flex gap-1 overflow-x-auto scrollbar-thin bg-bg/70 p-1 max-w-full">
               <li><button className={`btn whitespace-nowrap ${location === "hub" ? "border-gold text-gold" : ""}`} onClick={() => requestTravel("hub")}>Burrow</button></li>
               {ROOMS.map((r) => (

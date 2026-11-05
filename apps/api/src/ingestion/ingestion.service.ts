@@ -4,13 +4,14 @@ import { ApiEvent, CoreResponse, EconomyResponse, EventsResponse, SettlementsRes
 import type { Address } from "viem";
 import { z } from "zod";
 import { PrismaService } from "../common/prisma.service";
+import { DigService } from "../dig/dig.service";
 import { StreamService } from "../stream/stream.service";
 import { ArchiveWriter } from "./archive-writer.service";
 import { ChainBackfillService, completedRange } from "./chain-backfill.service";
 import { INSTALLATION_NOTES } from "./curated";
 import { FetchOutcome, SqueekApiClient } from "./squeek-api.client";
 
-const JOBS = { status: 5_000, events: 15_000, settlements: 30_000, core: 30_000, economy: 60_000, stats: 300_000, runs: 120_000, chain: 60_000 } as const;
+const JOBS = { status: 5_000, events: 15_000, settlements: 30_000, core: 30_000, economy: 60_000, stats: 300_000, runs: 120_000, chain: 60_000, dig: 60_000 } as const;
 type JobName = keyof typeof JOBS;
 const MAX_BACKOFF = 15 * 60_000;
 const JOB_LIMIT_MS = 5 * 60_000;
@@ -30,6 +31,7 @@ export class IngestionService implements OnApplicationBootstrap, OnApplicationSh
     private readonly chain: ChainBackfillService,
     private readonly writer: ArchiveWriter,
     private readonly stream: StreamService,
+    private readonly dig: DigService,
   ) {}
 
   async onApplicationBootstrap() {
@@ -88,7 +90,15 @@ export class IngestionService implements OnApplicationBootstrap, OnApplicationSh
       case "stats": return this.syncStats();
       case "runs": return this.syncRuns();
       case "chain": return this.syncChain();
+      case "dig": return this.syncDig();
     }
+  }
+
+  private async syncDig(): Promise<boolean> {
+    await this.dig.settle();
+    await this.dig.recheckSqueeks();
+    await this.markOk("dig");
+    return false;
   }
 
   private async markOk(name: string, schemaVersion?: string) {

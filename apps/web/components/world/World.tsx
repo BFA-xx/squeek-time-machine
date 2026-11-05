@@ -2,7 +2,7 @@
 import { AdaptiveDpr, PerformanceMonitor, Sparkles, Text } from "@react-three/drei";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
-import { ROOMS, formatInt, rpmFromMilli } from "@stm/shared";
+import { CREWS, ROOMS, formatInt, rpmFromMilli } from "@stm/shared";
 import gsap from "gsap";
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -10,13 +10,23 @@ import { audio } from "@/lib/audio";
 import { useWorld, type Panel } from "@/lib/store";
 import { SEEDS } from "../panels/discoveries";
 import { Hamster } from "./Hamster";
-import { ROOM_ANGLES, arrivalPoint, isOpenFloor, isWalkable, locate, roomCenter, roomIndex, roomPoint, step } from "./layout";
-import { Portals, Shells, WallDots } from "./Shell";
+import { ROOM_ANGLES, addObstacles, arrivalPoint, isOpenFloor, isWalkable, locate, roomCenter, roomIndex, roomPoint, step } from "./layout";
+import { Portals, Shells } from "./Shell";
 import { GiantWheel } from "./Wheel";
+import { pollGamepad } from "./gamepad";
 import { input } from "./input";
+import { hubWheel, ride, rideAngleUpdate, rideIntensity, rideStart, rideUpdate } from "./ride";
+import { hop, hopUpdate } from "./hop";
+import { OtherPlayers } from "./OtherPlayers";
+import { net, useNet } from "@/lib/multiplayer";
+import { SpeedEffects } from "./SpeedEffects";
+import { FloorLines, WallScreens } from "./Futurescape";
+import { SqueekCharacter } from "./SqueekCharacter";
+import { focus, nearestSpot } from "./spots";
 import { WORLD_FONT } from "./rooms/common";
 
 const ROOM_COMPONENTS: Record<string, React.LazyExoticComponent<React.ComponentType<{ index: number }>>> = {
+  dig: lazy(() => import("./rooms/Dig")),
   beginning: lazy(() => import("./rooms/Beginning")),
   timeline: lazy(() => import("./rooms/Timeline")),
   wheel: lazy(() => import("./rooms/WheelRoom")),
@@ -27,12 +37,14 @@ const ROOM_COMPONENTS: Record<string, React.LazyExoticComponent<React.ComponentT
 };
 
 const SPEED = 7.5;
+const SHOWCASE = { x: 12, z: 11 };
+const LEVER = { x: -11, z: 6 };
 gsap.ticker.lagSmoothing(0);
 
 interface Player { x: number; z: number; yaw: number; speed: number; target: THREE.Vector3 | null; snap: boolean }
 
 function usePlayer() {
-  return useRef<Player>({ x: 0, z: 17, yaw: Math.PI, speed: 0, target: null, snap: false });
+  return useRef<Player>({ x: 0, z: 12, yaw: Math.PI, speed: 0, target: null, snap: false });
 }
 
 /** Rooms load only when you get close, and unload when you've gone. */
@@ -78,6 +90,7 @@ function RoamingLights({ player }: { player: React.RefObject<Player> }) {
   useFrame(() => {
     const { x, z } = player.current;
     near.current?.position.set(x, 3.6, z);
+    if (near.current) near.current.intensity = 28 + rideIntensity() * 150;
     if (key.current) {
       key.current.position.set(x + 14, 34, z + 10);
       key.current.target.position.set(x, 0, z);
@@ -90,20 +103,21 @@ function RoamingLights({ player }: { player: React.RefObject<Player> }) {
     if (idx >= 0) {
       const c = roomCenter(idx);
       room.current.position.set(c.x, 9, c.z);
-      room.current.color.set(ROOMS[idx].color);
+      // Mostly warm white, with just a hint of the room's colour.
+      room.current.color.set(ROOMS[idx].color).lerp(new THREE.Color("#ffe6c8"), 0.62);
       room.current.intensity = 130;
     } else if (location === "hub") {
       room.current.position.set(0, 13, 8);
-      room.current.color.set("#ffb45e");
-      room.current.intensity = 190;
+      room.current.color.set("#ffe6cc");
+      room.current.intensity = 150;
     }
   }, [location]);
   return (
     <>
-      <hemisphereLight args={["#ffd9a8", "#20140c", 0.55]} />
-      <pointLight ref={near} color="#ffbf80" intensity={28} distance={24} decay={1.6} />
-      <pointLight ref={room} color="#ffb45e" intensity={190} distance={60} decay={1.5} position={[0, 13, 8]} />
-      <directionalLight ref={key} castShadow color="#ffdcae" intensity={1.1} position={[18, 34, 12]} shadow-mapSize={[2048, 2048]} shadow-bias={-0.0006} shadow-camera-left={-34} shadow-camera-right={34} shadow-camera-top={34} shadow-camera-bottom={-34} shadow-camera-near={1} shadow-camera-far={90} />
+      <hemisphereLight args={["#ffeeda", "#1c1612", 0.5]} />
+      <pointLight ref={near} color="#ffe2c4" intensity={24} distance={24} decay={1.6} />
+      <pointLight ref={room} color="#ffe6cc" intensity={150} distance={60} decay={1.5} position={[0, 13, 8]} />
+      <directionalLight ref={key} castShadow color="#fff0dc" intensity={0.9} position={[18, 34, 12]} shadow-mapSize={[2048, 2048]} shadow-bias={-0.0006} shadow-camera-left={-34} shadow-camera-right={34} shadow-camera-top={34} shadow-camera-bottom={-34} shadow-camera-near={1} shadow-camera-far={90} />
     </>
   );
 }
@@ -113,7 +127,7 @@ function Controller({ player, intro }: { player: React.RefObject<Player>; intro:
   const avatar = useRef<THREE.Group>(null);
   const speedRef = useRef(0);
   const cam = useRef({ yaw: Math.PI, pitch: 0.3, dist: 11 });
-  const camPos = useRef(new THREE.Vector3(0, 7, 28));
+  const camPos = useRef(new THREE.Vector3(0, 6, 22));
   const look = useRef(new THREE.Vector3(0, 2, 14));
   const marker = useRef<THREE.Mesh>(null);
   const travel = useWorld((s) => s.travel);
@@ -122,6 +136,10 @@ function Controller({ player, intro }: { player: React.RefObject<Player>; intro:
   const reduced = useWorld((s) => s.settings.reducedMotion);
   const fade = useRef<HTMLDivElement | null>(null);
   const idle = useRef(0);
+  const riding = useRef<false | "hub" | "wheel">(false);
+  const digMe = useWorld((s) => s.digMe);
+  const character = useWorld((s) => s.character);
+  const crewColor = CREWS.find((c) => c.slug === digMe?.crew)?.color;
 
   useEffect(() => {
     if (!travel) return;
@@ -166,8 +184,58 @@ function Controller({ player, intro }: { player: React.RefObject<Player>; intro:
       camPos.current.set(p.x - Math.sin(p.yaw) * 9, 6, p.z - Math.cos(p.yaw) * 9);
       look.current.set(p.x, 1.1, p.z);
     }
-    let mx = input.axisX + (input.keys.has("KeyD") || input.keys.has("ArrowRight") ? 1 : 0) - (input.keys.has("KeyA") || input.keys.has("ArrowLeft") ? 1 : 0);
-    let mz = input.axisY + (input.keys.has("KeyS") || input.keys.has("ArrowDown") ? 1 : 0) - (input.keys.has("KeyW") || input.keys.has("ArrowUp") ? 1 : 0);
+    pollGamepad(dt);
+    const wheelIndex = roomIndex("wheel");
+    const riding_ = useWorld.getState().ride;
+    if (riding_) {
+      // On a wheel: the hamster stays at the bottom of the rim, and the camera sits side-on.
+      if (!riding.current) {
+        riding.current = riding_;
+        rideStart();
+        p.target = null;
+      }
+      ride.boost = Math.max(ride.boost, input.keyBoost);
+      hop.y = hop.v = 0;
+      rideUpdate(dt, net.wheels[riding_ === "hub" ? 1 : 2][1] >= 2 ? net.wheels[riding_ === "hub" ? 1 : 2][0] : 0);
+      audio?.setRide(rideIntensity());
+      const hub = riding_ === "hub";
+      const c = hub ? { x: 0, z: 0 } : roomCenter(wheelIndex);
+      const facing = hub ? Math.PI / 2 : ROOM_ANGLES[wheelIndex];
+      speedRef.current = Math.min(14, (ride.rpm / 100) * 8);
+      if (avatar.current) {
+        // Carried along the rim when slowing, always standing parallel to it, feet on the rungs.
+        const angle = reduced ? 0 : rideAngleUpdate(dt);
+        const R = hub ? 5.95 : 3.05;
+        const hubY = hub ? 7.1 : 3.78;
+        avatar.current.position.set(c.x - Math.sin(facing) * Math.sin(angle) * R, hubY - Math.cos(angle) * R, c.z - Math.cos(facing) * Math.sin(angle) * R);
+        avatar.current.rotation.order = "YXZ";
+        avatar.current.rotation.set(angle, facing, 0);
+        avatar.current.visible = true;
+      }
+      const side = facing + Math.PI / 2;
+      const back = hub ? 18 : 12.5;
+      const ease = reduced ? 1 : 1 - Math.exp(-dt * 3);
+      // Framed high, so the hamster stays visible above the on-screen panel.
+      camPos.current.lerp(new THREE.Vector3(c.x + Math.sin(side) * back, hub ? 3 : 2.4, c.z + Math.cos(side) * back), ease);
+      look.current.lerp(new THREE.Vector3(c.x, hub ? 2 : 0.1, c.z), ease);
+      camera.position.copy(camPos.current);
+      camera.lookAt(look.current);
+      return;
+    }
+    if (riding.current) {
+      const off = riding.current === "hub" ? { x: 0, z: 10, yaw: Math.PI } : { ...roomPoint(wheelIndex, 0, 6.5), yaw: ROOM_ANGLES[wheelIndex] };
+      riding.current = false;
+      audio?.setRide(0);
+      ride.rpm = 0;
+      p.x = off.x;
+      p.z = off.z;
+      p.yaw = off.yaw;
+      p.snap = true;
+      return;
+    }
+    const sprint = Math.max(input.padBoost, input.keyBoost);
+    let mx = input.axisX + input.padX + (input.keys.has("KeyD") || input.keys.has("ArrowRight") ? 1 : 0) - (input.keys.has("KeyA") || input.keys.has("ArrowLeft") ? 1 : 0);
+    let mz = input.axisY + input.padY + (input.keys.has("KeyS") || input.keys.has("ArrowDown") ? 1 : 0) - (input.keys.has("KeyW") || input.keys.has("ArrowUp") ? 1 : 0);
     const manual = Math.hypot(mx, mz) > 0.05;
     let vx = 0, vz = 0;
     if (intro.current.active) {
@@ -188,7 +256,9 @@ function Controller({ player, intro }: { player: React.RefObject<Player>; intro:
     const moving = Math.hypot(vx, vz) > 0.01;
     const before = { x: p.x, z: p.z };
     if (moving) {
-      const n = step(p, vx * SPEED * dt, vz * SPEED * dt);
+      // R2 or Shift sprints, by as much as the trigger is pressed.
+      const pace = SPEED * (1 + sprint * 0.9);
+      const n = step(p, vx * pace * dt, vz * pace * dt);
       p.x = n.x; p.z = n.z;
       if (n.x === before.x && n.z === before.z) p.target = null;
       const want = Math.atan2(vx, vz);
@@ -198,8 +268,9 @@ function Controller({ player, intro }: { player: React.RefObject<Player>; intro:
     p.speed += (realSpeed - p.speed) * Math.min(1, dt * 10);
     speedRef.current = p.speed;
     if (avatar.current) {
-      avatar.current.position.set(p.x, 0, p.z);
-      avatar.current.rotation.y = p.yaw;
+      hopUpdate(dt);
+      avatar.current.position.set(p.x, hop.y, p.z);
+      avatar.current.rotation.set(0, p.yaw, 0);
       avatar.current.visible = !intro.current.active || intro.current.progress > 0.55;
     }
     if (marker.current) {
@@ -241,7 +312,7 @@ function Controller({ player, intro }: { player: React.RefObject<Player>; intro:
   });
   return (
     <>
-      <group ref={avatar}><Hamster speedRef={speedRef} scale={1} /></group>
+      <group ref={avatar}>{character ? <SqueekCharacter tokenId={character} speedRef={speedRef} /> : <Hamster speedRef={speedRef} scale={1} crewColor={crewColor} stars={digMe?.squeekLevel ?? 0} />}</group>
       <mesh ref={marker} rotation={[-Math.PI / 2, 0, 0]} visible={false}><ringGeometry args={[0.3, 0.42, 24]} /><meshBasicMaterial color="#f2c230" transparent opacity={0.85} toneMapped={false} /></mesh>
     </>
   );
@@ -255,7 +326,9 @@ function Proximity({ player }: { player: React.RefObject<Player> }) {
   const last = useRef<string | null>(null);
   const spots = useMemo(() => {
     const list: { key: string; x: number; z: number; r: number; label: string; action: () => void }[] = [
-      { key: "wheel", x: 0, z: 0, r: 11, label: "Inspect WHEELY9000", action: () => open({ kind: "room", room: "wheel" }) },
+      { key: "wheel", x: 0, z: 0, r: 11.5, label: "Hop on the giant wheel", action: () => { audio?.portal(); useWorld.getState().setRide("hub"); } },
+      { key: "lever", x: LEVER.x, z: LEVER.z, r: 3.4, label: "Pull the checkpoint lever", action: () => { audio?.select(); open({ kind: "contribute" }); } },
+      { key: "showcase", x: SHOWCASE.x, z: SHOWCASE.z, r: 3.4, label: "See my Squeeks", action: () => { audio?.select(); open({ kind: "squeeks" }); } },
     ];
     ROOMS.forEach((room, i) => {
       const c = roomCenter(i);
@@ -270,17 +343,50 @@ function Proximity({ player }: { player: React.RefObject<Player> }) {
   }, [open, markFound]);
   useFrame(() => {
     const p = player.current;
-    const hit = spots.find((s) => {
-      if (s.key.startsWith("seed-") && useWorld.getState().found.includes(s.key)) return false;
-      return Math.hypot(p.x - s.x, p.z - s.z) < s.r;
-    });
-    const key = hit?.key ?? null;
+    if (useWorld.getState().ride) {
+      focus.current = null;
+      if (last.current !== null) {
+        last.current = null;
+        setPrompt(null);
+      }
+      return;
+    }
+    const inReach = (t: { x: number; z: number; r: number }) => Math.hypot(p.x - t.x, p.z - t.z) < t.r;
+    // Most specific first: a hidden seed, then the nearest object you can use, then the room as a whole.
+    const seed = spots.find((s) => s.key.startsWith("seed-") && !useWorld.getState().found.includes(s.key) && inReach(s));
+    const near = seed ? null : nearestSpot(p);
+    const general = seed || near ? null : spots.find((s) => !s.key.startsWith("seed-") && inReach(s));
+    const hit = seed ?? near ?? general ?? null;
+    focus.current = seed ?? near;
+    const key = hit ? `${hit.key}|${hit.label}` : null;
     if (key !== last.current) {
       last.current = key;
       setPrompt(hit ? { label: hit.label, action: hit.action } : null);
     }
   });
   return null;
+}
+
+/** A ring and a small arrow on whatever you're close enough to use. */
+function FocusMarker() {
+  const ring = useRef<THREE.Group>(null);
+  useFrame(({ clock }) => {
+    const g = ring.current;
+    if (!g) return;
+    g.visible = !!focus.current;
+    if (focus.current) {
+      g.position.set(focus.current.x, 0.04, focus.current.z);
+      g.rotation.y = clock.elapsedTime * 0.8;
+      // The ring has to clear whatever it's marking, and bigger objects have a longer reach.
+      const size = Math.max(0.8, focus.current.r * 0.5) * (1 + Math.sin(clock.elapsedTime * 3.5) * 0.06);
+      g.scale.set(size, 1, size);
+    }
+  });
+  return (
+    <group ref={ring} visible={false}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]}><ringGeometry args={[1.16, 1.2, 64]} /><meshBasicMaterial color="#e6cf95" transparent opacity={0.85} toneMapped={false} /></mesh>
+    </group>
+  );
 }
 
 function Seeds() {
@@ -294,7 +400,7 @@ function Seeds() {
       {SEEDS.filter((s) => !found.includes(s.slug)).map((s) => {
         const i = s.room === "hub" ? -1 : ROOMS.findIndex((r) => r.slug === s.room);
         const at = i < 0 ? { x: s.at[0], z: s.at[1] } : roomPoint(i, s.at[0], s.at[1]);
-        return <mesh key={s.slug} position={[at.x, 0.55, at.z]} scale={[0.17, 0.27, 0.17]}><sphereGeometry args={[1, 10, 10]} /><meshStandardMaterial color="#f2c230" emissive="#f2c230" emissiveIntensity={2.2} toneMapped={false} /></mesh>;
+        return <mesh key={s.slug} position={[at.x, 0.55, at.z]} scale={[0.11, 0.18, 0.11]}><sphereGeometry args={[1, 12, 12]} /><meshStandardMaterial color="#d9b45a" metalness={0.5} roughness={0.3} emissive="#d9a93a" emissiveIntensity={0.7} /></mesh>;
       })}
     </group>
   );
@@ -322,12 +428,100 @@ function WheelSign() {
   const live = useWorld((s) => s.live);
   const height = useWorld((s) => s.world?.core?.blockHeight ?? s.world?.live?.settled?.blockHeight ?? null);
   const fresh = live && (live.freshness === "online" || live.freshness === undefined);
-  const text = !live ? "WAITING FOR A READING" : !fresh ? "NO FRESH READING" : (live.rpmMilli ?? 0) > 0 ? `RUNNING  ${rpmFromMilli(live.rpmMilli!)} RPM` : "THE WHEEL IS STILL";
+  const onHub = useWorld((s) => s.ride === "hub");
+  const text = onHub ? "YOUR RUN · NOT MEASURED" : !live ? "WAITING FOR A READING" : !fresh ? "NO FRESH READING" : (live.rpmMilli ?? 0) > 0 ? `RUNNING  ${rpmFromMilli(live.rpmMilli!)} RPM` : "THE WHEEL IS STILL";
   return (
     <group position={[0, 15.4, 0]}>
-      <Text font={WORLD_FONT} fontSize={1.15} color="#f2c230" anchorX="center" anchorY="middle" letterSpacing={0.05} rotation={[0, Math.PI, 0]} position={[0, 0, -0.1]}>{text}<meshBasicMaterial color="#f2c230" toneMapped={false} /></Text>
-      <Text font={WORLD_FONT} fontSize={1.15} color="#f2c230" anchorX="center" anchorY="middle" letterSpacing={0.05} position={[0, 0, 0.1]}>{text}<meshBasicMaterial color="#f2c230" toneMapped={false} /></Text>
+      <Text font={WORLD_FONT} fontSize={0.9} color="#efeadf" anchorX="center" anchorY="middle" letterSpacing={0.14} rotation={[0, Math.PI, 0]} position={[0, 0, -0.1]}>{text}<meshBasicMaterial color="#efeadf" toneMapped={false} /></Text>
+      <Text font={WORLD_FONT} fontSize={0.9} color="#efeadf" anchorX="center" anchorY="middle" letterSpacing={0.14} position={[0, 0, 0.1]}>{text}<meshBasicMaterial color="#efeadf" toneMapped={false} /></Text>
       {height && <Text font={WORLD_FONT} fontSize={0.7} color="#fdfbc8" anchorX="center" anchorY="middle" position={[0, -1.15, 0.1]}>{`SQUEEK BLOCK ${formatInt(height)}`}<meshBasicMaterial color="#fdfbc8" toneMapped={false} /></Text>}
+    </group>
+  );
+}
+
+function HubWheel() {
+  const onHub = useWorld((s) => s.ride === "hub");
+  const others = useNet((s) => s.hubBusy);
+  // Only players' legs ever take over from his: when nobody's on it, the wheel shows Squeektoshi's measured speed.
+  return <GiantWheel driver={onHub ? ride : others ? hubWheel : undefined} onClick={() => { if (!useWorld.getState().ride) { audio?.portal(); useWorld.getState().setRide("hub"); } }} />;
+}
+
+/** Sparks fly off whichever wheel is being ridden, away from the way the hamster's facing. */
+function RideEffects() {
+  const where = useWorld((s) => s.ride);
+  const at = useMemo(() => {
+    if (where === "hub") return { x: 0, y: 1.1, z: 0, backX: -1, backZ: 0 };
+    const i = roomIndex("wheel");
+    const c = roomCenter(i);
+    return { x: c.x, y: 0.7, z: c.z, backX: -Math.sin(ROOM_ANGLES[i]), backZ: -Math.cos(ROOM_ANGLES[i]) };
+  }, [where]);
+  return where ? <SpeedEffects at={at} /> : null;
+}
+
+/** A plinth in the burrow that shows the visitor's own Squeek, once they've connected a wallet. */
+function Showcase() {
+  const open = useWorld((s) => s.openPanel);
+  const panel = useWorld((s) => s.panel);
+  const [art, setArt] = useState<THREE.Texture | null>(null);
+  const spin = useRef<THREE.Group>(null);
+  useEffect(() => addObstacles([{ x: SHOWCASE.x, z: SHOWCASE.z, r: 1.1 }]), []);
+  useEffect(() => {
+    if (panel) return;
+    let wallet: string | null = null;
+    try {
+      wallet = localStorage.getItem("stm.viewWallet");
+    } catch {}
+    if (!wallet) return;
+    let live = true;
+    let made: THREE.Texture | null = null;
+    fetch(`/api/v1/squeeks/owner/${wallet}`).then((r) => r.json()).then((d) => {
+      const id = d.tokens?.[0]?.tokenId;
+      return id ? fetch(`/api/v1/squeeks/${id}`).then((r) => r.json()) : null;
+    }).then((d) => {
+      if (!live || !d?.image) return;
+      new THREE.TextureLoader().load(d.image, (t) => {
+        if (!live) return t.dispose();
+        t.colorSpace = THREE.SRGBColorSpace;
+        t.magFilter = THREE.NearestFilter;
+        made = t;
+        setArt(t);
+      });
+    }).catch(() => undefined);
+    return () => {
+      live = false;
+      made?.dispose();
+    };
+  }, [panel]);
+  useFrame((_, dt) => {
+    if (spin.current) spin.current.rotation.y += dt * 0.5;
+  });
+  return (
+    <group position={[SHOWCASE.x, 0, SHOWCASE.z]} onClick={(e) => { e.stopPropagation(); if (e.delta < 6) open({ kind: "squeeks" }); }} onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "pointer"; }} onPointerOut={() => { document.body.style.cursor = ""; }}>
+      <mesh position={[0, 0.55, 0]} castShadow receiveShadow><cylinderGeometry args={[0.72, 0.8, 1.1, 40]} /><meshStandardMaterial color="#2a241e" metalness={0.55} roughness={0.42} /></mesh>
+      <mesh position={[0, 1.106, 0]} rotation={[-Math.PI / 2, 0, 0]}><ringGeometry args={[0.62, 0.645, 48]} /><meshBasicMaterial color="#c9a24a" toneMapped={false} /></mesh>
+      <group ref={spin} position={[0, 2.25, 0]}>
+        <mesh castShadow><boxGeometry args={[1.5, 1.5, 0.1]} /><meshStandardMaterial color="#1a1a20" metalness={0.4} roughness={0.5} /></mesh>
+        {[1, -1].map((f) => <mesh key={f} position={[0, 0, f * 0.056]} rotation={[0, f < 0 ? Math.PI : 0, 0]}><planeGeometry args={[1.36, 1.36]} />{art ? <meshBasicMaterial map={art} toneMapped={false} /> : <meshStandardMaterial color="#5b7cfa" emissive="#5b7cfa" emissiveIntensity={0.4} />}</mesh>)}
+      </group>
+    </group>
+  );
+}
+
+/** The way into on-chain contributions: a real lever for a real, permissionless contract call. */
+function Lever() {
+  const open = useWorld((s) => s.openPanel);
+  const ring = useRef<THREE.Mesh>(null);
+  useEffect(() => addObstacles([{ x: LEVER.x, z: LEVER.z, r: 1 }]), []);
+  useFrame(({ clock }) => {
+    if (ring.current) ring.current.rotation.z = clock.elapsedTime * 0.7;
+  });
+  return (
+    <group position={[LEVER.x, 0, LEVER.z]} onClick={(e) => { e.stopPropagation(); if (e.delta < 6) open({ kind: "contribute" }); }} onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "pointer"; }} onPointerOut={() => { document.body.style.cursor = ""; }}>
+      <mesh position={[0, 0.7, 0]} castShadow><boxGeometry args={[1.3, 1.4, 0.9]} /><meshStandardMaterial color="#2a241e" metalness={0.55} roughness={0.42} /></mesh>
+      <mesh position={[0, 1.42, 0.05]}><boxGeometry args={[1.14, 0.02, 0.74]} /><meshStandardMaterial color="#3a3026" metalness={0.5} roughness={0.3} emissive="#c9a24a" emissiveIntensity={0.25} /></mesh>
+      <mesh position={[0.25, 2, 0]} rotation={[0, 0, -0.5]} castShadow><cylinderGeometry args={[0.06, 0.06, 1.3, 10]} /><meshStandardMaterial color="#c8ccd8" metalness={0.8} roughness={0.25} /></mesh>
+      <mesh position={[0.56, 2.55, 0]}><sphereGeometry args={[0.17, 16, 16]} /><meshStandardMaterial color="#d98a4a" metalness={0.3} roughness={0.25} emissive="#ff8a3d" emissiveIntensity={0.4} /></mesh>
+      <mesh ref={ring} position={[0, 3.1, 0]}><torusGeometry args={[0.46, 0.008, 6, 64]} /><meshBasicMaterial color="#c9a24a" toneMapped={false} /></mesh>
     </group>
   );
 }
@@ -335,7 +529,6 @@ function WheelSign() {
 function Scene({ intro, quality }: { intro: React.RefObject<{ active: boolean; progress: number }>; quality: "low" | "medium" | "high" }) {
   const player = usePlayer();
   const clickToMove = useWorld((s) => s.settings.clickToMove);
-  const openPanel = useWorld((s) => s.openPanel);
   const onFloor = (e: ThreeEvent<MouseEvent>) => {
     if (e.delta > 6 || !clickToMove) return;
     const obj = e.object as THREE.Object3D;
@@ -349,16 +542,22 @@ function Scene({ intro, quality }: { intro: React.RefObject<{ active: boolean; p
       <fog attach="fog" args={["#120c08", 34, 92]} />
       <RoamingLights player={player} />
       <group onClick={onFloor}><Shells /></group>
-      <WallDots />
       <Portals />
-      <GiantWheel onClick={() => openPanel({ kind: "room", room: "wheel" })} />
+      <HubWheel />
       <WheelSign />
+      <Showcase />
+      <Lever />
+      <FloorLines quality={quality} />
+      <WallScreens quality={quality} />
+      <RideEffects />
       <RoomsNear player={player} />
       <Seeds />
       {quality !== "low" && <Residents />}
       {quality !== "low" && <Sparkles count={quality === "high" ? 120 : 60} scale={[46, 12, 46]} position={[0, 6, 0]} size={2.2} speed={0.18} opacity={0.5} color="#ffcf8a" />}
       <Controller player={player} intro={intro} />
+      <OtherPlayers player={player} quality={quality} />
       <Proximity player={player} />
+      <FocusMarker />
       <TravelFromUrl player={player} />
       {quality === "high" && (
         <EffectComposer multisampling={0}>

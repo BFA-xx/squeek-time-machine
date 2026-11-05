@@ -1,0 +1,15 @@
+{
+  "name": "@stm/realtime",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node --env-file-if-exists=.env dist/node.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "cf:dev": "wrangler dev --port 4401",
+    "cf:deploy": "wrangler deploy"
+  },
+  "dependencies": { "@stm/shared": "*", "ws": "^8.18.3" },
+  "devDependencies": { "@types/node": "^22.18.6", "@types/ws": "^8.18.1", "typescript": "^5.9.3", "vitest": "^3.2.4" }
+}

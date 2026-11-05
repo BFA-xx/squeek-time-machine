@@ -32,6 +32,42 @@ declare global {
   }
 }
 
+/** Name and about are shown on everything you post. The username is your link, and it can change once a week. */
+export function ProfileForm() {
+  const { me, setMe } = useMe();
+  const [displayName, setDisplayName] = useState(me?.displayName ?? "");
+  const [username, setUsername] = useState(me?.username ?? "");
+  const [bio, setBio] = useState(me?.bio ?? "");
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (!me) return null;
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setNote(null);
+    try {
+      const r = await api<{ user: Me }>("/users/me/profile", { method: "PUT", body: { displayName, username, bio } });
+      setMe(r.user);
+      setNote({ ok: true, text: "Saved." });
+    } catch (err) {
+      setNote({ ok: false, text: (err as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form onSubmit={save} className="card p-3 space-y-3">
+      <label className="block"><span className="label">Name</span><input className="field mt-1" maxLength={40} value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="How you'd like to appear" /></label>
+      <label className="block"><span className="label">Username</span><input className="field mt-1 font-data" autoComplete="username" maxLength={24} value={username} onChange={(e) => setUsername(e.target.value)} /><span className="text-xs text-gray">Letters, numbers and underscores. You can change this once a week.</span></label>
+      <label className="block"><span className="label">About you</span><textarea className="field mt-1 min-h-16" maxLength={240} value={bio} onChange={(e) => setBio(e.target.value)} /></label>
+      <div className="flex items-center gap-3">
+        <button className="btn btn-gold" disabled={busy}>Save profile</button>
+        {note && <p role={note.ok ? "status" : "alert"} className={`text-sm ${note.ok ? "text-mint" : "text-rose"}`}>{note.text}</p>}
+      </div>
+    </form>
+  );
+}
+
 export function AccountPanel() {
   useLoadMe();
   const { me, setMe } = useMe();
@@ -80,10 +116,11 @@ export function AccountPanel() {
   if (me) {
     return (
       <div>
-        <Heading eyebrow="Your account" title={me.username} sub={me.wallet ? `Wallet ${me.wallet}` : "No wallet linked. You don't need one."} />
-        {error && <p role="alert" className="text-sm text-rose mb-3">{error}</p>}
-        <div className="flex flex-wrap gap-2">
-          <button className="btn" onClick={() => open({ kind: "user", username: me.username })}>View profile</button>
+        <Heading eyebrow="Your account" title={me.displayName ?? me.username} sub={me.wallet ? `Wallet ${me.wallet}` : "No wallet linked. You don't need one."} />
+        <ProfileForm />
+        {error && <p role="alert" className="text-sm text-rose my-3">{error}</p>}
+        <div className="flex flex-wrap gap-2 mt-4">
+          <button className="btn" onClick={() => open({ kind: "user", username: me.username })}>View public profile</button>
           {!me.wallet && <button className="btn" disabled={busy} onClick={wallet}>Link a wallet</button>}
           <button className="btn" onClick={async () => { await api("/auth/logout", { method: "POST" }); setMe(null); }}>Sign out</button>
         </div>

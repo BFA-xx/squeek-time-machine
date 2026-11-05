@@ -3,9 +3,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { api } from "@/lib/api";
 import { useWorld } from "@/lib/store";
-import { clickable, RoomSign, useSolid } from "./common";
+import { formatInt } from "@stm/shared";
+import { audio } from "@/lib/audio";
+import { clickable, RoomSign, useSolid, useSpots } from "./common";
 
-interface Row { workPerThousandBlocks: number; blockHeight: string }
+interface Row { workPerThousandBlocks: number; blockHeight: string; settledThroughRound: string }
+const STOPS = 8;
 
 /** Two real curves as sculpture: a wall of difficulty and a rising spiral of block height. */
 export default function EvolutionRoom({ index }: { index: number }) {
@@ -18,6 +21,9 @@ export default function EvolutionRoom({ index }: { index: number }) {
   useEffect(() => {
     api<{ mining: Row[] }>("/evolution").then((r) => setRows(r.mining)).catch(() => undefined);
   }, [bump]);
+  // The dial winds the sculpture back through its real history. Each stop shows only what had happened by then.
+  const [stop, setStop] = useState(STOPS);
+  const pushToast = useWorld((s) => s.pushToast);
   const sample = useMemo(() => {
     const cap = 120;
     if (rows.length <= cap) return rows;
@@ -29,6 +35,7 @@ export default function EvolutionRoom({ index }: { index: number }) {
     const w = wall.current;
     const s = spiral.current;
     if (!w || !s || !sample.length) return;
+    const shown = Math.max(1, Math.ceil((stop / STOPS) * sample.length));
     const dMin = Math.min(...sample.map((r) => r.workPerThousandBlocks));
     const dMax = Math.max(...sample.map((r) => r.workPerThousandBlocks));
     const hMax = Math.max(1, ...sample.map((r) => Number(r.blockHeight)));
@@ -49,22 +56,41 @@ export default function EvolutionRoom({ index }: { index: number }) {
       d.updateMatrix();
       s.setMatrixAt(i, d.matrix);
     });
-    w.count = s.count = sample.length;
+    w.count = s.count = shown;
     w.instanceMatrix.needsUpdate = s.instanceMatrix.needsUpdate = true;
     w.computeBoundingSphere();
     s.computeBoundingSphere();
-  }, [sample]);
+  }, [sample, stop]);
+  const columnAt = (i: number) => {
+    const t = sample.length === 1 ? 0.5 : i / (sample.length - 1);
+    const a = -2.3 + t * 4.6;
+    return { lx: Math.sin(a) * 12, lz: -Math.cos(a) * 12 };
+  };
+  useSpots(index, [
+    { key: "evo-dial", lx: 0, lz: 0, r: 5, label: stop === STOPS ? "Turn the dial back through history" : "Turn the dial forward", action: () => {
+      if (!sample.length) return;
+      const next = stop === STOPS ? 1 : stop + 1;
+      setStop(next);
+      audio?.select();
+      const row = sample[Math.max(0, Math.ceil((next / STOPS) * sample.length) - 1)];
+      pushToast({ title: `Round ${row.settledThroughRound}: block ${formatInt(row.blockHeight)}, difficulty ${formatInt(row.workPerThousandBlocks)}`, tone: "chain" });
+    } },
+    ...sample.filter((_, i) => i % 3 === 0).map((r) => {
+      const i = sample.indexOf(r);
+      return { key: `evo-${r.settledThroughRound}`, ...columnAt(i), r: 2.4, label: `Round ${r.settledThroughRound}: difficulty ${formatInt(r.workPerThousandBlocks)}`, action: () => open({ kind: "room", room: "evolution" }) };
+    }),
+  ], `${sample.length}-${stop}`);
   return (
     <group>
       <RoomSign text="The Evolution Room" color="#a8baff" y={7.4} />
-      <mesh position={[0, 4.2, 0]} {...clickable(open, { kind: "room", room: "evolution" })}><cylinderGeometry args={[0.32, 0.5, 8.4, 10]} /><meshStandardMaterial color="#2e3350" metalness={0.5} roughness={0.5} /></mesh>
+      <mesh position={[0, 4.2, 0]} {...clickable(open, { kind: "room", room: "evolution" })}><cylinderGeometry args={[0.16, 0.26, 8.4, 32]} /><meshStandardMaterial color="#2a241e" metalness={0.55} roughness={0.42} /></mesh>
       <instancedMesh ref={wall} args={[undefined, undefined, 120]} castShadow {...clickable(open, { kind: "room", room: "evolution" })}>
         <boxGeometry args={[0.42, 1, 0.3]} />
-        <meshStandardMaterial color="#a8baff" emissive="#a8baff" emissiveIntensity={0.3} metalness={0.3} roughness={0.5} />
+        <meshStandardMaterial color="#5f6680" emissive="#a8baff" emissiveIntensity={0.08} metalness={0.55} roughness={0.35} />
       </instancedMesh>
       <instancedMesh ref={spiral} args={[undefined, undefined, 120]} {...clickable(open, { kind: "room", room: "evolution" })}>
         <sphereGeometry args={[0.15, 8, 8]} />
-        <meshStandardMaterial color="#f2c230" emissive="#f2c230" emissiveIntensity={1.1} toneMapped={false} />
+        <meshStandardMaterial color="#c9a24a" emissive="#c9a24a" emissiveIntensity={0.55} metalness={0.5} roughness={0.3} />
       </instancedMesh>
     </group>
   );

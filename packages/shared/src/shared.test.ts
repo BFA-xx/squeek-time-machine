@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ApiEvent, blocksFromSettlement, checkUserText, formatSqk, milestonesCrossed, nextDistanceThresholds, normalizeEvent, parseSubject, usernameAllowed } from "./index";
+import { ApiEvent, bandOf, blocksFromSettlement, chamberOf, checkUserText, claimant, formatSqk, milestonesCrossed, nextDistanceThresholds, normalizeEvent, parseSubject, pointsFor, roundAt, roundStart, shiftOfRound, shiftWindow, usernameAllowed } from "./index";
 
 const chainEvent = {
   id: "chain:1:a:b:243:system.settlement_completed", eventVersion: 2, occurredAt: "2026-10-28T23:30:36.000Z", recordedAt: "2026-10-28T23:30:36.000Z",
@@ -95,4 +95,37 @@ describe("community text", () => {
 
 describe("format", () => {
   it("uses integer maths for SQK", () => expect(formatSqk("66142272600198236206048", 2)).toBe("66,142.27"));
+});
+
+describe("The Great Dig rules", () => {
+  it("puts work in the right band at every edge", () => {
+    expect([0n, 1n, 299n, 300n, 999n, 1000n, 50000n].map(bandOf)).toEqual(["asleep", "stirring", "stirring", "running", "running", "sprinting", "sprinting"]);
+  });
+  it("counts rounds the way the official API does", () => {
+    const g = 1793735400n;
+    expect(roundAt(g, Number(g) - 5)).toBe(0n);
+    expect(roundAt(g, Number(g))).toBe(1n);
+    expect(roundAt(g, Number(g) + 599)).toBe(1n);
+    expect(roundAt(g, Number(g) + 600)).toBe(2n);
+    // Round 229 ran 09:50 to 10:00 on 5 November, from the official settlements response.
+    expect(roundStart(g, 229n)).toBe(BigInt(Date.UTC(2026, 10, 5, 9, 50) / 1000));
+  });
+  it("groups rounds into six-hour shifts", () => {
+    expect(shiftWindow(0)).toEqual({ index: 0, startRound: 1n, endRound: 36n });
+    expect(shiftWindow(1).startRound).toBe(37n);
+    expect(shiftOfRound(36n)).toBe(0);
+    expect(shiftOfRound(37n)).toBe(1);
+  });
+  it("pays more for a call most people got wrong", () => {
+    expect(pointsFor(1, 1)).toBe(10);
+    expect(pointsFor(1, 10)).toBe(91);
+    expect(pointsFor(0, 10)).toBe(0);
+  });
+  it("gives a chamber to the top crew, and to nobody on a tie or an empty dig", () => {
+    expect(claimant({ a: 5, b: 9 })).toBe("b");
+    expect(claimant({ a: 9, b: 9 })).toBeNull();
+    expect(claimant({})).toBeNull();
+    expect(claimant({ a: 0 })).toBeNull();
+    expect(chamberOf(2999n)).toBe(2);
+  });
 });

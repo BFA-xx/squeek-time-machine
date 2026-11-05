@@ -49,6 +49,16 @@ export class ChainBackfillService {
     ),
   });
 
+  /** A transaction and its receipt, or null if it isn't mined yet. Read-only. */
+  async readTx(hash: `0x${string}`) {
+    try {
+      const [tx, receipt] = await Promise.all([this.client.getTransaction({ hash }), this.client.getTransactionReceipt({ hash })]);
+      return { from: tx.from, to: tx.to, input: tx.input, status: receipt.status, blockNumber: receipt.blockNumber, logs: receipt.logs.map((l) => ({ address: l.address, topics: l.topics, data: l.data })) };
+    } catch {
+      return null;
+    }
+  }
+
   async latestBlock(): Promise<bigint> {
     return this.client.getBlockNumber();
   }

@@ -3,6 +3,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 export const API = "/api/v1";
 
+/** Set when the site is published without an API. It says so plainly, and makes no calls that can only fail. */
+export const API_OFFLINE = process.env.NEXT_PUBLIC_API_OFFLINE === "1";
+export const OFFLINE_MESSAGE = "The live archive isn't online yet, so this isn't available.";
+
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
@@ -10,6 +14,7 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(path: string, init?: { method?: string; body?: unknown }): Promise<T> {
+  if (API_OFFLINE) throw new ApiError(OFFLINE_MESSAGE, 503);
   let res: Response;
   try {
     res = await fetch(`${API}${path}`, {
@@ -97,11 +102,11 @@ export interface WorldState {
   latest: { id: string; title: string; occurredAt: string; provisional: boolean } | null;
   sources: SourceHealth[];
 }
-export interface Memory { id: string; subject: string; kind: string; body: string; createdAt: string; username: string; reactions: Record<string, number> }
-export interface CommentRow { id: string; subject: string; parentId: string | null; body: string; createdAt: string; username: string; reactions: Record<string, number> }
+export interface Memory { id: string; subject: string; kind: string; body: string; createdAt: string; username: string; displayName?: string | null; reactions: Record<string, number> }
+export interface CommentRow { id: string; subject: string; parentId: string | null; body: string; createdAt: string; username: string; displayName?: string | null; reactions: Record<string, number> }
 export interface PollRow { id: string; question: string; scope: string; createdAt: string; username: string; options: { id: string; label: string; votes: number }[]; myVote: string | null }
-export interface FeedRow { id: string; kind: string; subject: string; excerpt: string | null; createdAt: string; username: string }
-export interface Me { id: string; username: string; wallet: string | null; role: string }
+export interface FeedRow { id: string; kind: string; subject: string; excerpt: string | null; createdAt: string; username: string; displayName?: string | null }
+export interface Me { id: string; username: string; displayName: string | null; bio: string; wallet: string | null; role: string }
 export interface OriginArtifact { slug: string; shape: string; title: string; body: string; source: string }
 export interface MilestoneRow { key: string; kind: string; title: string; description: string; value: string; achievedAt: string; eventId: string | null; installationId: string }
 

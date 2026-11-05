@@ -1,4 +1,4 @@
-export const LIMITS = { comment: 800, memory: 400, username: 24, bio: 240, pollQuestion: 160, pollOption: 80, report: 300 };
+export const LIMITS = { displayName: 40, comment: 800, memory: 400, username: 24, bio: 240, pollQuestion: 160, pollOption: 80, report: 300 };
 
 const LINK = /\b(?:https?:\/\/|www\.)[^\s<>]+|\b[a-z0-9-]+\.(?:com|net|org|io|xyz|app|gg|me|co|ru|cn|top|click|link|info|site|online|fun|lol|eth|limo)\b(?:\/[^\s<>]*)?/gi;
 const ALLOWED_HOSTS = ["squeekchain.com", "etherscan.io"];
@@ -38,6 +38,11 @@ const RESERVED = new Set(["admin", "squeektoshi", "squeekchain", "wheely9000", "
 
 export function usernameAllowed(name: string): boolean {
   return USERNAME.test(name) && !RESERVED.has(name.toLowerCase());
+}
+
+/** Display names can use spaces and symbols, so they're compared with those removed. "Squeek Toshi!" is still taken. */
+export function displayNameAllowed(name: string): boolean {
+  return !RESERVED.has(name.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]/gu, ""));
 }
 
 export const REACTIONS = ["squeek", "wheel", "cheese", "heart", "wow"] as const;

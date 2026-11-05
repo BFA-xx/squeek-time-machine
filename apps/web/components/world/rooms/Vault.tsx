@@ -4,7 +4,9 @@ import * as THREE from "three";
 import { api, type BlockSummary } from "@/lib/api";
 import { useWorld } from "@/lib/store";
 import { audio } from "@/lib/audio";
-import { clickable, RoomSign, useSolid } from "./common";
+import { addResolver } from "../spots";
+import { ROOM_ANGLES, roomCenter, roomPoint } from "../layout";
+import { clickable, RoomSign, useSolid, useSpots } from "./common";
 
 const MAX = 6000;
 const PER_RING = 118;
@@ -33,6 +35,28 @@ export default function VaultRoom({ index }: { index: number }) {
     api<{ blocks: BlockSummary[] }>(`/blocks?limit=2000`).then((r) => live && setBlocks(r.blocks.slice().reverse())).catch(() => undefined);
     return () => { live = false; };
   }, [bump]);
+  useSpots(index, [{ key: "vault-plinth", lx: 0, lz: 0, r: 4.6, label: "Search the vault by block height", action: () => { audio?.select(); open({ kind: "room", room: "vault" }); } }], "static");
+  // Walking along the wall offers whichever block is in front of you.
+  useEffect(() => addResolver((p) => {
+    if (!blocks.length) return null;
+    const c = roomCenter(index);
+    const a = ROOM_ANGLES[index];
+    const dx = p.x - c.x, dz = p.z - c.z;
+    const lx = -dx * Math.cos(a) + dz * Math.sin(a);
+    const lz = -dx * Math.sin(a) - dz * Math.cos(a);
+    if (Math.hypot(lx, lz) < 12.4) return null;
+    const angle = (Math.atan2(lx, lz) + Math.PI * 2) % (Math.PI * 2);
+    if (angle < DOOR_GAP || angle > Math.PI * 2 - DOOR_GAP) return null;
+    const column = Math.round(((angle - DOOR_GAP) / (Math.PI * 2 - DOOR_GAP * 2)) * PER_RING) % PER_RING;
+    const rows = Math.floor((Math.min(blocks.length, MAX) - 1 - column) / PER_RING);
+    if (rows < 0) return null;
+    const i = column + rows * PER_RING;
+    const b = blocks[i];
+    if (!b) return null;
+    const [bx, , bz] = blockPlace(i);
+    const at = roomPoint(index, bx * 0.86, bz * 0.86);
+    return { key: `block-${b.height}`, x: at.x, z: at.z, r: 3.2, label: `Pull out block ${b.height}`, action: () => { audio?.select(); open({ kind: "block", height: b.height }); } };
+  }), [blocks, index, open]);
   const col = useMemo(() => new THREE.Color(), []);
   useEffect(() => {
     const m = ref.current;
@@ -45,7 +69,7 @@ export default function VaultRoom({ index }: { index: number }) {
       pos.updateMatrix();
       m.setMatrixAt(i, pos.matrix);
       const newest = i >= n - 18;
-      m.setColorAt(i, col.set(b.height === highlight ? "#fdfbc8" : newest ? "#7dffb6" : "#35d07f"));
+      m.setColorAt(i, col.set(b.height === highlight ? "#fdfbc8" : newest ? "#58c48d" : "#223029"));
     });
     m.count = n;
     m.instanceMatrix.needsUpdate = true;
@@ -63,14 +87,14 @@ export default function VaultRoom({ index }: { index: number }) {
   return (
     <group>
       <RoomSign text="The Block Vault" color="#35d07f" y={6.2} />
-      <mesh position={[0, 1, 0]} castShadow {...clickable(open, { kind: "room", room: "vault" })}><cylinderGeometry args={[1.2, 2, 2, 8]} /><meshStandardMaterial color="#1f2a24" metalness={0.5} roughness={0.5} /></mesh>
-      <mesh position={[0, 2.5, 0]}  {...clickable(open, { kind: "room", room: "vault" })}><octahedronGeometry args={[0.8]} /><meshStandardMaterial color="#35d07f" emissive="#35d07f" emissiveIntensity={1.2} toneMapped={false} /></mesh>
+      <mesh position={[0, 1, 0]} castShadow {...clickable(open, { kind: "room", room: "vault" })}><cylinderGeometry args={[1.05, 1.5, 2, 48]} /><meshStandardMaterial color="#2a241e" metalness={0.55} roughness={0.42} /></mesh>
+      <mesh position={[0, 2.5, 0]}  {...clickable(open, { kind: "room", room: "vault" })}><octahedronGeometry args={[0.8]} /><meshStandardMaterial color="#6fd9a4" metalness={0.3} roughness={0.2} emissive="#35d07f" emissiveIntensity={0.45} /></mesh>
       <instancedMesh ref={ref} args={[undefined, undefined, MAX]} castShadow
         onClick={(e) => { e.stopPropagation(); if (e.delta < 6 && e.instanceId !== undefined && blocks[e.instanceId]) { audio?.select(); open({ kind: "block", height: blocks[e.instanceId].height }); } }}
         onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "pointer"; }}
         onPointerOut={() => { document.body.style.cursor = ""; }}>
         <boxGeometry args={[0.72, 0.38, 0.5]} />
-        <meshStandardMaterial roughness={0.35} metalness={0.45} emissive="#35d07f" emissiveIntensity={0.25} />
+        <meshStandardMaterial roughness={0.32} metalness={0.5} emissive="#35d07f" emissiveIntensity={0.04} />
       </instancedMesh>
       <mesh ref={beacon} visible={false}><coneGeometry args={[0.3, 0.6, 8]} /><meshBasicMaterial color="#fdfbc8" toneMapped={false} /></mesh>
     </group>

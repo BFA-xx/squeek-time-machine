@@ -245,6 +245,38 @@ describe("community", () => {
     expect(JSON.stringify(p.body)).not.toContain("passwordHash");
   });
 
+  it("lets members set a name, about text and username, and shows them everywhere", async () => {
+    const id = await seedEvents();
+    const name = uname();
+    const agent = await signUp(name);
+    const r = await agent.put("/v1/users/me/profile").send({ displayName: "Wheel Watcher", bio: "hi" }).expect(200);
+    expect(r.body.user.displayName).toBe("Wheel Watcher");
+    expect((await agent.get("/v1/auth/me")).body.user.displayName).toBe("Wheel Watcher");
+    await agent.post("/v1/community/memories").send({ subject: `event:${id}`, body: "named post" }).expect(201);
+    expect((await http().get("/v1/community/memories")).body[0].displayName).toBe("Wheel Watcher");
+    const next = uname();
+    const renamed = await agent.put("/v1/users/me/profile").send({ username: next }).expect(200);
+    expect(renamed.body.user.username).toBe(next);
+    await http().get(`/v1/users/${next}`).expect(200);
+    await http().get(`/v1/users/${name}`).expect(404);
+    expect((await http().get("/v1/community/memories")).body[0].username).toBe(next);
+    await agent.put("/v1/users/me/profile").send({ displayName: "" }).expect(200);
+    expect((await agent.get("/v1/auth/me")).body.user.displayName).toBeNull();
+  });
+
+  it("limits username changes and refuses taken, reserved and impersonating names", async () => {
+    const agent = await signUp();
+    const other = uname();
+    await signUp(other);
+    await agent.put("/v1/users/me/profile").send({ username: other.toUpperCase() }).expect(409);
+    await agent.put("/v1/users/me/profile").send({ username: "Squeektoshi" }).expect(400);
+    await agent.put("/v1/users/me/profile").send({ username: "has space" }).expect(400);
+    await agent.put("/v1/users/me/profile").send({ displayName: "Squeek Toshi!" }).expect(400);
+    await agent.put("/v1/users/me/profile").send({ displayName: "visit evil-site.top" }).expect(400);
+    await agent.put("/v1/users/me/profile").send({ username: uname() }).expect(200);
+    await agent.put("/v1/users/me/profile").send({ username: uname() }).expect(429);
+  });
+
   it("counts shares", async () => {
     const id = await seedEvents();
     expect((await http().post("/v1/community/share").send({ subject: `event:${id}` }).expect(200)).body.count).toBe(1);

@@ -8,5 +8,9 @@ export function configProblems(env: NodeJS.ProcessEnv = process.env): string[] {
   if (!env.WALLET_DOMAIN) out.push("WALLET_DOMAIN is required, for example time.example.com");
   if ((env.ADMIN_TOKEN ?? "").length < 32) out.push("ADMIN_TOKEN must be at least 32 characters");
   if ((env.PROXY_SECRET ?? "").length < 32) out.push("PROXY_SECRET must be at least 32 characters, and match the web app's");
+  if (env.REALTIME_URL) {
+    if (!env.REALTIME_URL.startsWith("wss://")) out.push("REALTIME_URL must be wss:// in production");
+    if ((env.REALTIME_SECRET ?? "").length < 32) out.push("REALTIME_SECRET must be at least 32 characters, and match the realtime room's");
+  }
   return out;
 }

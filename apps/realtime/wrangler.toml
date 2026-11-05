@@ -1,0 +1,19 @@
+name = "squeek-time-machine-realtime"
+main = "src/worker.ts"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+# Set this to your real site before deploying.
+ALLOWED_ORIGINS = "http://localhost:3300"
+
+[[durable_objects.bindings]]
+name = "BURROW"
+class_name = "BurrowRoom"
+
+# The free plan needs the SQLite-backed kind of Durable Object.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["BurrowRoom"]
+
+# Set the secret with: npx wrangler secret put REALTIME_SECRET

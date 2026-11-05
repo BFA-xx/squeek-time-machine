@@ -5,7 +5,7 @@ import { AppModule } from "../src/app.module";
 import { configureApp } from "../src/bootstrap";
 import { PrismaService } from "../src/common/prisma.service";
 
-const TABLES = ["ModerationReport", "UserContribution", "ShareRecord", "PollVote", "PollOption", "Poll", "Reaction", "Comment", "CommunityMemory", "WalletChallenge", "Session", "UserProfile", "User", "Milestone", "WheelDay", "MiningRecord", "BlockRecord", "SettlementRecord", "RecordCorrection", "HistoricalEvent", "LastGoodState", "IngestionCursor", "DataSource", "Installation"];
+const TABLES = ["DigTask", "DigContribution", "DigCall", "DigMember", "DigShift", "DigChamber", "ModerationReport", "UserContribution", "ShareRecord", "PollVote", "PollOption", "Poll", "Reaction", "Comment", "CommunityMemory", "WalletChallenge", "Session", "UserProfile", "User", "Milestone", "WheelDay", "MiningRecord", "BlockRecord", "SettlementRecord", "RecordCorrection", "HistoricalEvent", "LastGoodState", "IngestionCursor", "DataSource", "Installation"];
 
 export async function makeApp(): Promise<INestApplication> {
   const mod = await Test.createTestingModule({ imports: [AppModule] }).compile();

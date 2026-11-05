@@ -76,6 +76,28 @@ class AudioEngine {
     this.rpm = rpm;
   }
 
+  private rideOsc: OscillatorNode | null = null;
+  private rideGain: GainNode | null = null;
+
+  /** A rising motor note while running on a wheel. Silent at 0. */
+  setRide(intensity: number) {
+    const ctx = this.ctx;
+    if (!ctx || !this.master || ctx.state !== "running") return;
+    if (!this.rideOsc) {
+      this.rideOsc = ctx.createOscillator();
+      this.rideOsc.type = "sawtooth";
+      this.rideGain = ctx.createGain();
+      this.rideGain.gain.value = 0;
+      const lp = ctx.createBiquadFilter();
+      lp.type = "lowpass";
+      lp.frequency.value = 1400;
+      this.rideOsc.connect(lp).connect(this.rideGain).connect(this.master);
+      this.rideOsc.start();
+    }
+    this.rideOsc.frequency.setTargetAtTime(50 + intensity * 340, ctx.currentTime, 0.08);
+    this.rideGain!.gain.setTargetAtTime(intensity > 0.01 ? 0.03 + intensity * 0.11 : 0, ctx.currentTime, 0.08);
+  }
+
   private scheduleClick() {
     if (this.clickTimer) clearTimeout(this.clickTimer);
     const tick = () => {

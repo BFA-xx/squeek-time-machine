@@ -5,7 +5,7 @@ import { AdminGuard, AuthGuard } from "./auth.guard";
 import { AuthService, isValidSignatureShape, SESSION_COOKIE } from "./auth.service";
 import { CommunityService } from "./community.service";
 
-type Authed = Request & { user: { id: string; username: string; walletAddress: string | null; role: string; createdAt: Date } };
+type Authed = Request & { user: { id: string; username: string; walletAddress: string | null; role: string; createdAt: Date; usernameChangedAt: Date | null } };
 const WRITE = { default: { limit: 30, ttl: 60_000 } };
 const AUTH = { default: { limit: Number(process.env.AUTH_THROTTLE_PER_MINUTE ?? 10), ttl: 60_000 } };
 

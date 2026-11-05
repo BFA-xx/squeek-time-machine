@@ -9,9 +9,10 @@ const EAR = "#c07e72";
 const DARK = "#1b1210";
 
 /** A small white-orange Syrian hamster, built from primitives. `speed` is how fast it's walking right now. */
-export function Hamster({ speedRef, scale = 1, asleep = false, wheelRun = false }: { speedRef?: React.RefObject<number>; scale?: number; asleep?: boolean; wheelRun?: boolean }) {
+export function Hamster({ speedRef, scale = 1, asleep = false, wheelRun = false, crewColor, stars = 0 }: { speedRef?: React.RefObject<number>; scale?: number; asleep?: boolean; wheelRun?: boolean; crewColor?: string; stars?: number }) {
   const legs = useRef<(THREE.Mesh | null)[]>([]);
   const body = useRef<THREE.Group>(null);
+  const root = useRef<THREE.Group>(null);
   const t = useRef(Math.random() * 10);
   useFrame((_, dt) => {
     const speed = wheelRun ? 6 : speedRef?.current ?? 0;
@@ -23,11 +24,11 @@ export function Hamster({ speedRef, scale = 1, asleep = false, wheelRun = false 
     if (body.current) {
       const breathe = asleep ? Math.sin(t.current * 0.35) * 0.018 : Math.sin(t.current * 0.6) * 0.008;
       body.current.scale.y = 1 + breathe;
-      body.current.position.y = speed > 0.1 ? Math.abs(Math.sin(t.current)) * 0.05 : 0;
+      body.current.position.y = 0;
     }
   });
   return (
-    <group scale={scale}>
+    <group ref={root} scale={scale}>
       <group ref={body} rotation={asleep ? [0.12, 0, 0] : [0, 0, 0]}>
         <mesh castShadow position={[0, 0.42, 0]} scale={[0.5, 0.42, 0.62]}><sphereGeometry args={[1, 18, 14]} /><meshStandardMaterial color={FUR} roughness={0.95} /></mesh>
         <mesh position={[0, 0.3, 0.1]} scale={[0.42, 0.3, 0.52]}><sphereGeometry args={[1, 14, 10]} /><meshStandardMaterial color={WHITE} roughness={1} /></mesh>
@@ -51,6 +52,8 @@ export function Hamster({ speedRef, scale = 1, asleep = false, wheelRun = false 
           )}
           <mesh position={[0, -0.03, 0.36]} scale={0.032}><sphereGeometry args={[1, 8, 8]} /><meshStandardMaterial color="#d98a8a" /></mesh>
         </group>
+        {crewColor && <mesh position={[0, 0.58, 0.32]} rotation={[0.45, 0, 0]}><torusGeometry args={[0.3, 0.06, 8, 22]} /><meshStandardMaterial color={crewColor} emissive={crewColor} emissiveIntensity={0.25} roughness={0.8} /></mesh>}
+        {Array.from({ length: Math.min(stars, 5) }, (_, i) => <mesh key={i} position={[(i - (Math.min(stars, 5) - 1) / 2) * 0.13, 1.08, 0.5]} scale={0.05}><octahedronGeometry args={[1]} /><meshStandardMaterial color="#f2c230" emissive="#f2c230" emissiveIntensity={1.4} toneMapped={false} /></mesh>)}
         <mesh position={[0, 0.42, -0.6]} scale={0.07}><sphereGeometry args={[1, 8, 8]} /><meshStandardMaterial color={WHITE} /></mesh>
       </group>
       {[[-0.28, 0.32], [0.28, 0.32], [-0.28, -0.32], [0.28, -0.32]].map(([x, z], i) => (

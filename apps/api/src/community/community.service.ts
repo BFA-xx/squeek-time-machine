@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, HttpException, Injectable, NotFoundException } from "@nestjs/common";
-import { LIMITS, REACTIONS, checkUserText, parseSubject } from "@stm/shared";
+import { LIMITS, REACTIONS, checkUserText, displayNameAllowed, parseSubject, usernameAllowed } from "@stm/shared";
 import { PrismaService } from "../common/prisma.service";
 import { toJson } from "../common/serialize";
 import { StreamService } from "../stream/stream.service";
@@ -69,9 +69,9 @@ export class CommunityService {
       orderBy: { createdAt: "desc" },
       take: Math.min(q.limit ?? 30, 100),
       ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}),
-      include: { user: { select: { username: true } } },
+      include: { user: { select: { username: true, profile: { select: { displayName: true } } } } },
     });
-    return this.withReactions(rows.map((m) => ({ id: m.id, subject: m.subject, kind: m.kind, body: m.body, createdAt: m.createdAt, username: m.user.username })), "memory");
+    return this.withReactions(rows.map((m) => ({ id: m.id, subject: m.subject, kind: m.kind, body: m.body, createdAt: m.createdAt, username: m.user.username, displayName: m.user.profile?.displayName ?? null })), "memory");
   }
 
   private async withReactions<T extends { id: string }>(rows: T[], kind: "memory" | "comment") {
@@ -99,8 +99,8 @@ export class CommunityService {
 
   async listComments(subject: string, limit = 50) {
     if (!parseSubject(subject)) throw new BadRequestException("Unknown subject.");
-    const rows = await this.db.comment.findMany({ where: { subject, status: "visible" }, orderBy: { createdAt: "asc" }, take: Math.min(limit, 200), include: { user: { select: { username: true } } } });
-    return this.withReactions(rows.map((c) => ({ id: c.id, subject: c.subject, parentId: c.parentId, body: c.body, createdAt: c.createdAt, username: c.user.username })), "comment");
+    const rows = await this.db.comment.findMany({ where: { subject, status: "visible" }, orderBy: { createdAt: "asc" }, take: Math.min(limit, 200), include: { user: { select: { username: true, profile: { select: { displayName: true } } } } } });
+    return this.withReactions(rows.map((c) => ({ id: c.id, subject: c.subject, parentId: c.parentId, body: c.body, createdAt: c.createdAt, username: c.user.username, displayName: c.user.profile?.displayName ?? null })), "comment");
   }
 
   async toggleReaction(user: { id: string }, body: { subject?: unknown; kind?: unknown }) {
@@ -216,7 +216,7 @@ export class CommunityService {
   }
 
   async feed(limit = 30) {
-    const rows = await this.db.userContribution.findMany({ where: { kind: { in: ["memory", "comment", "poll"] } }, orderBy: { createdAt: "desc" }, take: Math.min(limit * 2, 100), include: { user: { select: { username: true, bannedAt: true } } } });
+    const rows = await this.db.userContribution.findMany({ where: { kind: { in: ["memory", "comment", "poll"] } }, orderBy: { createdAt: "desc" }, take: Math.min(limit * 2, 100), include: { user: { select: { username: true, bannedAt: true, profile: { select: { displayName: true } } } } } });
     const hidden = new Set<string>();
     const mem = rows.filter((r) => r.kind === "memory" && r.refId).map((r) => r.refId!);
     const com = rows.filter((r) => r.kind === "comment" && r.refId).map((r) => r.refId!);
@@ -224,7 +224,7 @@ export class CommunityService {
     (await this.db.communityMemory.findMany({ where: { id: { in: mem }, status: "hidden" }, select: { id: true } })).forEach((x) => hidden.add(x.id));
     (await this.db.comment.findMany({ where: { id: { in: com }, status: "hidden" }, select: { id: true } })).forEach((x) => hidden.add(x.id));
     (await this.db.poll.findMany({ where: { id: { in: pol }, status: "hidden" }, select: { id: true } })).forEach((x) => hidden.add(x.id));
-    return rows.filter((r) => !r.user.bannedAt && !(r.refId && hidden.has(r.refId))).slice(0, limit).map((r) => ({ id: r.id, kind: r.kind, subject: r.subject, excerpt: r.excerpt, createdAt: r.createdAt, username: r.user.username }));
+    return rows.filter((r) => !r.user.bannedAt && !(r.refId && hidden.has(r.refId))).slice(0, limit).map((r) => ({ id: r.id, kind: r.kind, subject: r.subject, excerpt: r.excerpt, createdAt: r.createdAt, username: r.user.username, displayName: r.user.profile?.displayName ?? null }));
   }
 
   async discovery() {
@@ -241,10 +241,10 @@ export class CommunityService {
       return e ? [{ ...e, count: r._count }] : [];
     });
     const popularIds = reactions.map((r) => r.subject.slice(7));
-    const popular = await this.db.communityMemory.findMany({ where: { id: { in: popularIds }, status: "visible" }, include: { user: { select: { username: true } } } });
+    const popular = await this.db.communityMemory.findMany({ where: { id: { in: popularIds }, status: "visible" }, include: { user: { select: { username: true, profile: { select: { displayName: true } } } } } });
     const popularMemories = reactions.flatMap((r) => {
       const m = popular.find((x) => x.id === r.subject.slice(7));
-      return m ? [{ id: m.id, subject: m.subject, kind: m.kind, body: m.body, username: m.user.username, createdAt: m.createdAt, count: r._count }] : [];
+      return m ? [{ id: m.id, subject: m.subject, kind: m.kind, body: m.body, username: m.user.username, displayName: m.user.profile?.displayName ?? null, createdAt: m.createdAt, count: r._count }] : [];
     });
     return toJson({ mostDiscussed: titled(comments), mostRemembered: titled(memories), popularMemories, recentMemories: recent });
   }
@@ -254,13 +254,42 @@ export class CommunityService {
     if (!user || user.bannedAt) throw new NotFoundException("No such user.");
     const contributions = await this.db.userContribution.findMany({ where: { userId: user.id, kind: { in: ["memory", "comment", "poll"] } }, orderBy: { createdAt: "desc" }, take: 50 });
     const totals = await this.db.userContribution.groupBy({ by: ["kind"], where: { userId: user.id }, _count: true });
-    return { username: user.username, wallet: user.walletAddress, bio: user.profile?.bio ?? "", joinedAt: user.createdAt, contributions, totals: Object.fromEntries(totals.map((t) => [t.kind, t._count])) };
+    return { username: user.username, displayName: user.profile?.displayName ?? null, wallet: user.walletAddress, bio: user.profile?.bio ?? "", joinedAt: user.createdAt, contributions, totals: Object.fromEntries(totals.map((t) => [t.kind, t._count])) };
   }
 
-  async updateProfile(user: { id: string }, body: { bio?: unknown }) {
-    const bio = body.bio === "" ? "" : this.clean(body.bio, LIMITS.bio);
-    await this.db.userProfile.upsert({ where: { userId: user.id }, update: { bio }, create: { userId: user.id, bio } });
-    return { bio };
+  /** Name and about are free to edit. A username is what links point to, so it can change once a week. */
+  async updateProfile(user: { id: string; username: string; usernameChangedAt?: Date | null }, body: { bio?: unknown; displayName?: unknown; username?: unknown }) {
+    const profile: { bio?: string; displayName?: string | null } = {};
+    if (body.bio !== undefined) profile.bio = body.bio === "" ? "" : this.clean(body.bio, LIMITS.bio);
+    if (body.displayName !== undefined) {
+      if (body.displayName === "" || body.displayName === null) profile.displayName = null;
+      else {
+        const name = this.clean(body.displayName, LIMITS.displayName);
+        if (!displayNameAllowed(name)) throw new BadRequestException("That name is reserved, because it could be mistaken for someone official.");
+        profile.displayName = name;
+      }
+    }
+    const account: { username?: string; usernameLower?: string; usernameChangedAt?: Date } = {};
+    if (typeof body.username === "string" && body.username !== user.username) {
+      const next = body.username.trim();
+      if (!usernameAllowed(next)) throw new BadRequestException("Usernames are 3 to 24 letters, numbers or underscores, and some names are reserved.");
+      const changed = user.usernameChangedAt;
+      const caseOnly = next.toLowerCase() === user.username.toLowerCase();
+      if (!caseOnly) {
+        if (changed && Date.now() - changed.getTime() < 7 * 24 * 3600_000) throw new HttpException("You can change your username once a week.", 429);
+        const taken = await this.db.user.findUnique({ where: { usernameLower: next.toLowerCase() }, select: { id: true } });
+        if (taken) throw new ConflictException("That username is taken.");
+        account.usernameChangedAt = new Date();
+      }
+      account.username = next;
+      account.usernameLower = next.toLowerCase();
+    }
+    const updated = await this.db.user.update({
+      where: { id: user.id },
+      data: { ...account, profile: { upsert: { update: profile, create: { bio: profile.bio ?? "", displayName: profile.displayName ?? null } } } },
+      include: { profile: true },
+    });
+    return { user: { id: updated.id, username: updated.username, displayName: updated.profile?.displayName ?? null, bio: updated.profile?.bio ?? "", wallet: updated.walletAddress, role: updated.role, createdAt: updated.createdAt } };
   }
 
   async share(subject: unknown) {
