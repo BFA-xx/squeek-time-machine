@@ -115,3 +115,7 @@ Positions aren't saved. A browser sends one only when it changes, at most four t
 
 On Vercel, set the project's root directory to `apps/web` and set `NEXT_PUBLIC_API_OFFLINE=1` and `NEXT_PUBLIC_SITE_URL`. The burrow and practice wheels work, and a notice says records, accounts, The Great Dig and multiplayer aren't available. To bring them online, host the API, set `API_INTERNAL_URL` and `PROXY_SECRET`, remove `NEXT_PUBLIC_API_OFFLINE`, and redeploy.
 
+### Networks that can't reach workers.dev
+
+Some networks, such as MTN Nigeria, time out on the addresses `workers.dev` hands out. The live setup reaches the room through the API's proxy instead: Caddy forwards `/room` to the Worker, and `REALTIME_URL` is `wss://YOUR-API-ADDRESS/room`. The room still runs on Cloudflare.
+

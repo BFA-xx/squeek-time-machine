@@ -14,7 +14,7 @@ async function join(browser: Browser, name?: string): Promise<Player> {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("websocket", (ws) => {
-    if (!ws.url().includes(":4400")) return;
+    if (!/:4400|\/room|realtime/.test(ws.url())) return;
     ws.on("framereceived", (f) => { try { frames.push(JSON.parse(String(f.payload))); } catch {} });
   });
   await page.addInitScript(() => {
