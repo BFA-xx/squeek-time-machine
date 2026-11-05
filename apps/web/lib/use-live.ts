@@ -1,12 +1,13 @@
 "use client";
 import { useEffect } from "react";
-import { API, api, type WorldState } from "./api";
+import { API, API_OFFLINE, api, type WorldState } from "./api";
 import { useWorld, type Live } from "./store";
 
 /** One SSE connection for the page. The browser hears from our server only, never the official API. */
 export function useLiveWorld(toasts = true) {
   const { setWorld, setLive, bumpBlocks, bumpEvents, bumpMemories, bumpDig, pushToast, setConnection } = useWorld.getState();
   useEffect(() => {
+    if (API_OFFLINE) return setConnection("lost");
     let closed = false;
     const refresh = () => api<WorldState>("/world/state").then((w) => {
       if (closed) return;

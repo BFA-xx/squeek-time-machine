@@ -70,3 +70,18 @@ describe("staying quiet offline", () => {
     expect(() => publish({ x: 1, z: 2, yaw: 0, speed: 3 }, 0, 1000)).not.toThrow();
   });
 });
+
+describe("published without an API", () => {
+  it("makes no network calls, and says why", async () => {
+    vi.resetModules();
+    vi.doUnmock("@/lib/api");
+    vi.stubEnv("NEXT_PUBLIC_API_OFFLINE", "1");
+    const fetcher = vi.fn();
+    vi.stubGlobal("fetch", fetcher);
+    const { api } = await import("../lib/api");
+    await expect(api("/world/state")).rejects.toThrow(/isn't online yet/);
+    expect(fetcher).not.toHaveBeenCalled();
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+});

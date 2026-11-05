@@ -1,7 +1,7 @@
 "use client";
 import type { Emote, PlayerInfo, RideCode } from "@stm/shared";
 import { create } from "zustand";
-import { api } from "./api";
+import { API_OFFLINE, api } from "./api";
 import { useWorld } from "./store";
 
 export interface Remote extends PlayerInfo {
@@ -190,6 +190,7 @@ function onVisibility() {
 }
 
 export function startMultiplayer() {
+  if (API_OFFLINE) return;
   wanted = true;
   if (!listening) {
     listening = true;

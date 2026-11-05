@@ -15,7 +15,8 @@ import { rideTap } from "../world/ride";
 import { EMOTES } from "@stm/shared";
 import { refreshMultiplayer, sendEmote, startMultiplayer, stopMultiplayer } from "@/lib/multiplayer";
 import { hopStart } from "../world/hop";
-import { LiveBadge, SourceBanner } from "./LiveBadge";
+import { API_OFFLINE } from "@/lib/api";
+import { LiveBadge, OFFLINE_NOTICE, SourceBanner } from "./LiveBadge";
 import { PlayersPill } from "./PlayersPill";
 import { RidePanel } from "./RidePanel";
 
@@ -263,6 +264,7 @@ export function Experience() {
                   <button className="btn text-sm px-6 py-3" onClick={() => { setStage("world"); }}>Skip the intro</button>
                   <a className="btn text-sm px-6 py-3" href="/archive">Use the 2D archive</a>
                 </div>
+                {API_OFFLINE && <p role="status" className="text-xs text-amber mt-4 max-w-md">{OFFLINE_NOTICE}</p>}
                 <p className="text-xs text-gray mt-4 max-w-md">Community-built. Not made or endorsed by the Squeekchain team. Testnet data with no monetary value.</p>
               </>
             ) : (

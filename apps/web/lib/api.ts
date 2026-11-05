@@ -3,6 +3,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 export const API = "/api/v1";
 
+/** Set when the site is published without an API. It says so plainly, and makes no calls that can only fail. */
+export const API_OFFLINE = process.env.NEXT_PUBLIC_API_OFFLINE === "1";
+export const OFFLINE_MESSAGE = "The live archive isn't online yet, so this isn't available.";
+
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
@@ -10,6 +14,7 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(path: string, init?: { method?: string; body?: unknown }): Promise<T> {
+  if (API_OFFLINE) throw new ApiError(OFFLINE_MESSAGE, 503);
   let res: Response;
   try {
     res = await fetch(`${API}${path}`, {
