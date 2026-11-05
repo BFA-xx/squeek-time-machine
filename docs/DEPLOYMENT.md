@@ -119,3 +119,15 @@ On Vercel, set the project's root directory to `apps/web` and set `NEXT_PUBLIC_A
 
 Some networks, such as MTN Nigeria, time out on the addresses `workers.dev` hands out. The live setup reaches the room through the API's proxy instead: Caddy forwards `/room` to the Worker, and `REALTIME_URL` is `wss://YOUR-API-ADDRESS/room`. The room still runs on Cloudflare.
 
+## Backups
+
+`deploy/backup.sh` runs on the server from cron and dumps the database to `~/squeek-backups`, keeping 14. `deploy/pull-backup.sh` runs on another machine and copies them off, because a backup on the same disk doesn't survive losing the server. The dumps hold password hashes and linked wallets, so keep them private.
+
+To restore into an empty database:
+
+```bash
+gunzip -c squeek-STAMP.sql.gz | psql -d squeek_time_machine
+```
+
+`REALTIME_SECRET`, `PROXY_SECRET` and `ADMIN_TOKEN` aren't in the dump. If they're lost, generate new ones and set them everywhere they're used.
+
