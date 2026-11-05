@@ -99,6 +99,38 @@ describe("using things up close", () => {
   });
 });
 
+describe("riding along the rim", () => {
+  it("carries the rider up the rim while slowing, then settles back at the bottom", async () => {
+    const { ride, rideAngleUpdate, rideStart, rideUpdate } = await import("@/components/world/ride");
+    rideStart();
+    ride.rpm = 200;
+    ride.lastRpm = 200;
+    let peak = 0;
+    for (let i = 0; i < 120; i++) {
+      rideUpdate(1 / 60);
+      peak = Math.max(peak, rideAngleUpdate(1 / 60));
+    }
+    expect(peak).toBeGreaterThan(0.4);
+    expect(peak).toBeLessThanOrEqual(1.05);
+    for (let i = 0; i < 900; i++) {
+      rideUpdate(1 / 60);
+      rideAngleUpdate(1 / 60);
+    }
+    expect(ride.rpm).toBe(0);
+    expect(Math.abs(ride.angle)).toBeLessThan(0.02);
+  });
+  it("stays near the bottom while running steadily", async () => {
+    const { ride, rideAngleUpdate, rideStart, rideTap, rideUpdate } = await import("@/components/world/ride");
+    rideStart();
+    for (let i = 0; i < 400; i++) {
+      if (i % 10 === 0) rideTap();
+      rideUpdate(1 / 60);
+      rideAngleUpdate(1 / 60);
+    }
+    expect(Math.abs(ride.angle)).toBeLessThan(0.35);
+  });
+});
+
 describe("PS5 controller", () => {
   it("ignores stick drift and reaches full speed at full tilt", async () => {
     const { deadzone } = await import("@/components/world/gamepad");
@@ -113,7 +145,7 @@ describe("PS5 controller", () => {
     expect(nextRoom("future", 1)).toBe("hub");
     expect(nextRoom("tunnel", 1)).toBe("dig");
   });
-  it("holding R2 makes each X tap worth more, and can pass what plain tapping reaches", async () => {
+  it("holding R1 makes each X tap worth more, and can pass what plain tapping reaches", async () => {
     const { ride, rideStart, rideTap, rideUpdate, MAX_RPM, rideTier } = await import("@/components/world/ride");
     const run = (boost: number) => {
       rideStart();
@@ -131,21 +163,27 @@ describe("PS5 controller", () => {
     expect(boosted).toBeLessThanOrEqual(MAX_RPM);
     expect(rideTier(boosted)).toBe("OVERDRIVE");
   });
-  it("reads R2 as boost and sprint, and D-pad as zoom", async () => {
+  it("reads R1 as boost and sprint, not R2", async () => {
     const { pollGamepad, PAD } = await import("@/components/world/gamepad");
     const { input } = await import("@/components/world/input");
     const { ride } = await import("@/components/world/ride");
     const { useWorld } = await import("@/lib/store");
     const buttons = Array.from({ length: 17 }, () => ({ pressed: false, touched: false, value: 0 }));
-    buttons[PAD.r2] = { pressed: true, touched: true, value: 0.5 };
+    buttons[PAD.r2] = { pressed: true, touched: true, value: 1 };
     Object.defineProperty(navigator, "getGamepads", { configurable: true, value: () => [{ connected: true, axes: [0, 0, 0, 0], buttons }] });
     useWorld.setState({ panel: null, ride: false });
     pollGamepad(0.016);
-    expect(input.padBoost).toBe(0.5);
+    expect(input.padBoost).toBe(0);
+    buttons[PAD.r1] = { pressed: true, touched: true, value: 1 };
+    pollGamepad(0.016);
+    expect(input.padBoost).toBe(1);
     useWorld.setState({ ride: "hub" });
     pollGamepad(0.016);
-    expect(ride.boost).toBe(0.5);
+    expect(ride.boost).toBe(1);
     useWorld.setState({ ride: false });
+    buttons[PAD.r1] = { pressed: false, touched: false, value: 0 };
+    buttons[PAD.r2] = { pressed: false, touched: false, value: 0 };
+    pollGamepad(0.016);
   });
   it("moves, uses and goes back with a mocked pad", async () => {
     const { pollGamepad } = await import("@/components/world/gamepad");

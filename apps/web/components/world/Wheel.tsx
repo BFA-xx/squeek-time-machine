@@ -5,8 +5,8 @@ import * as THREE from "three";
 import { useWorld } from "@/lib/store";
 import { Hamster } from "./Hamster";
 
-const STEEL = "#3a3640";
-const BRASS = "#b98a2a";
+const STEEL = "#2e2a27";
+const BRASS = "#a58a5c";
 
 /**
  * WHEELY9000. It only turns when the wheel really is turning: rotation comes straight from the
@@ -57,7 +57,7 @@ export function GiantWheel({ radius = 6, width = 3.4, showHamster = true, driver
     velocity.current += (target - velocity.current) * Math.min(1, dt * 1.2);
     if (spin.current) spin.current.rotation.z -= velocity.current * dt;
     const drive = driver ? Math.min(1, driver.rpm / 260) : 0;
-    if (glow.current) glow.current.emissiveIntensity += ((rpm > 0 ? 2.4 + drive * 7 : 0.7) - glow.current.emissiveIntensity) * Math.min(1, dt * 3);
+    if (glow.current) glow.current.emissiveIntensity += ((rpm > 0 ? 2.4 + drive * 7 : 0.35) - glow.current.emissiveIntensity) * Math.min(1, dt * 3);
     // At speed the rungs melt into a glowing blur.
     if (blur.current) {
       blur.current.opacity = Math.max(0, drive - 0.3) * 0.75;
@@ -70,8 +70,8 @@ export function GiantWheel({ radius = 6, width = 3.4, showHamster = true, driver
       <mesh position={[0, 0.2, 0]} receiveShadow castShadow><cylinderGeometry args={[radius * 0.82, radius * 0.95, 0.4, 40]} /><meshStandardMaterial color="#231a14" roughness={0.9} /></mesh>
       {[-1, 1].map((s) => (
         <group key={s} position={[0, 0, s * (width / 2 + 0.55)]}>
-          <mesh castShadow position={[-radius * 0.42, legH / 2 + 0.3, 0]} rotation={[0, 0, -0.42]}><boxGeometry args={[0.34, legH * 1.1, 0.34]} /><meshStandardMaterial color={STEEL} metalness={0.6} roughness={0.45} /></mesh>
-          <mesh castShadow position={[radius * 0.42, legH / 2 + 0.3, 0]} rotation={[0, 0, 0.42]}><boxGeometry args={[0.34, legH * 1.1, 0.34]} /><meshStandardMaterial color={STEEL} metalness={0.6} roughness={0.45} /></mesh>
+          <mesh castShadow position={[-radius * 0.42, legH / 2 + 0.3, 0]} rotation={[0, 0, -0.42]}><boxGeometry args={[0.2, legH * 1.1, 0.2]} /><meshStandardMaterial color={STEEL} metalness={0.6} roughness={0.45} /></mesh>
+          <mesh castShadow position={[radius * 0.42, legH / 2 + 0.3, 0]} rotation={[0, 0, 0.42]}><boxGeometry args={[0.2, legH * 1.1, 0.2]} /><meshStandardMaterial color={STEEL} metalness={0.6} roughness={0.45} /></mesh>
           <mesh position={[0, radius + 1.1, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow><cylinderGeometry args={[0.55, 0.55, 0.4, 18]} /><meshStandardMaterial color={BRASS} metalness={0.8} roughness={0.35} /></mesh>
         </group>
       ))}
@@ -80,7 +80,7 @@ export function GiantWheel({ radius = 6, width = 3.4, showHamster = true, driver
         <group ref={spin}>
           {[-1, 1].map((s) => (
             <group key={s} position={[0, 0, (s * width) / 2]}>
-              <mesh castShadow><torusGeometry args={[radius, 0.17, 10, 72]} /><meshStandardMaterial color={BRASS} metalness={0.75} roughness={0.38} /></mesh>
+              <mesh castShadow><torusGeometry args={[radius, 0.1, 12, 96]} /><meshStandardMaterial color={BRASS} metalness={0.75} roughness={0.38} /></mesh>
               {Array.from({ length: 8 }, (_, i) => (
                 <mesh key={i} rotation={[0, 0, (i / 8) * Math.PI * 2]} position={[0, 0, 0]}><boxGeometry args={[radius * 2, 0.09, 0.09]} /><meshStandardMaterial color={STEEL} metalness={0.6} roughness={0.5} /></mesh>
               ))}
@@ -94,8 +94,8 @@ export function GiantWheel({ radius = 6, width = 3.4, showHamster = true, driver
         </group>
         <mesh rotation={[Math.PI / 2, 0, 0]}><cylinderGeometry args={[radius, radius, width, 64, 1, true]} /><meshBasicMaterial ref={blur} color="#ffb347" transparent opacity={0} side={THREE.DoubleSide} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} /></mesh>
         <instancedMesh ref={lights} args={[undefined, undefined, 88]}>
-          <sphereGeometry args={[0.055, 6, 6]} />
-          <meshStandardMaterial ref={glow} color="#f2c230" emissive="#f2c230" emissiveIntensity={0.7} toneMapped={false} />
+          <sphereGeometry args={[0.032, 6, 6]} />
+          <meshStandardMaterial ref={glow} color="#e8d9a8" emissive="#e8d9a8" emissiveIntensity={0.35} toneMapped={false} />
         </instancedMesh>
       </group>
       <group position={[-0.1, 0.42, 0]} rotation={[0, Math.PI / 2, 0]}>

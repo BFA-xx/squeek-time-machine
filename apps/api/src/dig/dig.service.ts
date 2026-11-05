@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, HttpException, Injectable, ServiceUnavailableException } from "@nestjs/common";
-import { BANDS, CREWS, ROUNDS_PER_SHIFT, ROUND_SECONDS, WORK_PER_CHAMBER, bandOf, chamberOf, chamberTarget, claimant, isBand, isCrew, pointsFor, roundAt, roundStart, shiftOfRound, shiftWindow } from "@stm/shared";
+import { BANDS, CREWS, ROUNDS_PER_SHIFT, ROUND_SECONDS, TASK_DEFS, WORK_PER_CHAMBER, bandOf, chamberOf, chamberTarget, claimant, isBand, isCrew, isTask, pointsFor, roundAt, roundStart, shiftOfRound, shiftWindow, signTicket, verifyReceipt, type TaskSlug } from "@stm/shared";
 import { z } from "zod";
 import { PrismaService } from "../common/prisma.service";
 import { toJson } from "../common/serialize";
@@ -15,7 +15,7 @@ export class DigService {
   constructor(private readonly db: PrismaService, private readonly stream: StreamService, private readonly api: SqueekApiClient) {}
 
   /** The current installation, its round clock, and the certified frontier. Rounds past the frontier are unknown, not zero. */
-  private async season() {
+  async season() {
     const status = await this.db.lastGoodState.findUnique({ where: { key: "status" } });
     const id = (status?.body as { installationId?: string } | null)?.installationId
       ?? (await this.db.installation.findFirst({ where: { genesisTimestamp: { not: null } }, orderBy: { lastSeenAt: "desc" }, select: { id: true } }))?.id;
@@ -85,7 +85,13 @@ export class DigService {
       if (!hit) break;
       const scored = await this.db.digShift.findMany({ where: { installationId: id, settledAt: { gt: since, lte: hit.occurredAt } }, select: { index: true } });
       const totals = await this.db.digCall.groupBy({ by: ["crew"], where: { installationId: id, shiftIndex: { in: scored.map((s) => s.index) } }, _sum: { points: true } });
-      const crew = claimant(Object.fromEntries(totals.map((t) => [t.crew, t._sum.points ?? 0])));
+      const given = await this.db.digContribution.groupBy({ by: ["crew"], where: { installationId: id, crew: { not: null }, createdAt: { gt: since, lte: hit.occurredAt } }, _sum: { points: true } });
+      const tasks = await this.db.digTask.groupBy({ by: ["crew"], where: { installationId: id, createdAt: { gt: since, lte: hit.occurredAt } }, _sum: { points: true } });
+      const scores: Record<string, number> = {};
+      for (const t of tasks) scores[t.crew] = (scores[t.crew] ?? 0) + (t._sum.points ?? 0);
+      for (const t of totals) scores[t.crew] = (scores[t.crew] ?? 0) + (t._sum.points ?? 0);
+      for (const g of given) scores[g.crew!] = (scores[g.crew!] ?? 0) + (g._sum.points ?? 0);
+      const crew = claimant(scores);
       await this.db.digChamber.create({ data: { installationId: id, number: n, target, brokeAt: hit.occurredAt, transactionHash: hit.transactionHash, crew } });
       since = hit.occurredAt;
       made++;
@@ -141,10 +147,15 @@ export class DigService {
       const m = u.digMembers[0];
       return [{ username: u.username, displayName: u.profile?.displayName ?? null, points: t._sum.points ?? 0, wins: t._count, crew: m?.crew ?? null, squeekId: m?.squeekId ?? null, squeekLevel: m?.squeekLevel ?? null }];
     });
+    const [crewGiven, recentGiven] = await Promise.all([
+      this.db.digContribution.groupBy({ by: ["crew"], where: { installationId: id, crew: { not: null } }, _sum: { points: true } }),
+      this.db.digContribution.findMany({ where: { installationId: id }, orderBy: { createdAt: "desc" }, take: 8, include: { user: { select: { username: true, bannedAt: true, profile: { select: { displayName: true } } } } } }),
+    ]);
+    const crewTasks = await this.db.digTask.groupBy({ by: ["crew"], where: { installationId: id }, _sum: { points: true } });
     const claimed = await this.db.digChamber.groupBy({ by: ["crew"], where: { installationId: id, crew: { not: null } }, _count: true });
     const crews = CREWS.map((c) => ({
       ...c,
-      points: crewPoints.find((p) => p.crew === c.slug)?._sum.points ?? 0,
+      points: (crewPoints.find((p) => p.crew === c.slug)?._sum.points ?? 0) + (crewGiven.find((p) => p.crew === c.slug)?._sum.points ?? 0) + (crewTasks.find((p) => p.crew === c.slug)?._sum.points ?? 0),
       members: crewCounts.find((p) => p.crew === c.slug)?._count ?? 0,
       chambers: claimed.find((p) => p.crew === c.slug)?._count ?? 0,
     }));
@@ -157,6 +168,8 @@ export class DigService {
         this.db.digCall.findUnique({ where: { userId_installationId_shiftIndex: { userId: viewerId, installationId: id, shiftIndex: openIndex } } }),
         this.db.digCall.findMany({ where: { userId: viewerId, installationId: id }, orderBy: { shiftIndex: "desc" }, take: 30 }),
       ]);
+      const given = await this.db.digContribution.aggregate({ where: { userId: viewerId, installationId: id }, _sum: { points: true }, _count: true });
+      const taskTotal = await this.db.digTask.aggregate({ where: { userId: viewerId, installationId: id }, _sum: { points: true } });
       const settled = calls.filter((c) => c.correct !== null);
       let streak = 0;
       for (const c of settled) {
@@ -165,7 +178,7 @@ export class DigService {
       }
       me = {
         crew: member?.crew ?? null, joinedAt: member?.joinedAt ?? null, squeekId: member?.squeekId ?? null, squeekLevel: member?.squeekLevel ?? null,
-        openCall: call?.band ?? null, points: settled.reduce((a, c) => a + (c.points ?? 0), 0), wins: settled.filter((c) => c.correct).length, played: settled.length, streak,
+        openCall: call?.band ?? null, contributed: given._sum.points ?? 0, contributions: given._count, tasks: await this.taskList(viewerId, id, now), taskPoints: taskTotal._sum.points ?? 0, points: settled.reduce((a, c) => a + (c.points ?? 0), 0) + (given._sum.points ?? 0) + (taskTotal._sum.points ?? 0), wins: settled.filter((c) => c.correct).length, played: settled.length, streak,
         recent: calls.slice(0, 12).map((c) => ({ shiftIndex: c.shiftIndex, band: c.band, correct: c.correct, points: c.points })),
       };
     }
@@ -185,8 +198,56 @@ export class DigService {
       chambers: chambers.map((c) => ({ number: c.number, target: c.target, brokeAt: c.brokeAt, transactionHash: c.transactionHash, crew: c.crew })),
       crews,
       leaderboard,
+      contributions: recentGiven.filter((c) => !c.user.bannedAt).map((c) => ({ txHash: c.txHash, kind: c.kind, points: c.points, tokenIds: c.tokenIds, at: c.createdAt, username: c.user.username, displayName: c.user.profile?.displayName ?? null })),
       me,
     });
+  }
+
+  /** What today's tasks look like for this player. The server works out each one from real rows, not from what a browser says. */
+  private async taskList(userId: string, installationId: string, now: number) {
+    const day = new Date(now).toISOString().slice(0, 10);
+    const start = new Date(`${day}T00:00:00.000Z`);
+    const since = { gte: start };
+    const [claimed, call, chain, memory] = await Promise.all([
+      this.db.digTask.findMany({ where: { userId, installationId, day }, select: { task: true } }),
+      this.db.digCall.count({ where: { userId, installationId, createdAt: since } }),
+      this.db.digContribution.count({ where: { userId, installationId, createdAt: since, points: { gt: 0 } } }),
+      this.db.communityMemory.count({ where: { userId, status: "visible", createdAt: since } }),
+    ]);
+    const ready: Partial<Record<TaskSlug, boolean>> = { call: call > 0, chain: chain > 0, memory: memory > 0 };
+    return TASK_DEFS.map((t) => ({ ...t, claimed: claimed.some((c) => c.task === t.slug), ready: ready[t.slug] ?? false, room: t.slug === "together" || t.slug === "hello" }));
+  }
+
+  /** Credits a task once per UTC day. Wheel and hello tasks need a receipt signed by the multiplayer room. */
+  async claimTask(user: { id: string }, slug: unknown, proof: unknown, now = Date.now()) {
+    if (!isTask(slug)) throw new BadRequestException("That isn't one of today's tasks.");
+    const { id } = await this.requireSeason();
+    const member = await this.db.digMember.findUnique({ where: { userId_installationId: { userId: user.id, installationId: id } } });
+    if (!member) throw new BadRequestException("Join a crew first.");
+    const task = (await this.taskList(user.id, id, now)).find((t) => t.slug === slug)!;
+    if (task.claimed) throw new ConflictException("You've already done that one today.");
+    const done = task.room ? await verifyReceipt(proof, process.env.REALTIME_SECRET ?? "", user.id, slug as "together" | "hello", Math.floor(now / 1000)) : task.ready;
+    if (!done) throw new BadRequestException("That task isn't done yet.");
+    try {
+      await this.db.digTask.create({ data: { userId: user.id, installationId: id, crew: member.crew, day: new Date(now).toISOString().slice(0, 10), task: slug, points: task.points } });
+    } catch (e) {
+      if ((e as { code?: string }).code === "P2002") throw new ConflictException("You've already done that one today.");
+      throw e;
+    }
+    this.stream.publish("dig", { kind: "task", task: slug, points: task.points });
+    return { task: slug, points: task.points };
+  }
+
+  /** The pass for the multiplayer room. Only verified details go in, so nobody can pose as someone else. */
+  async realtimeTicket(user: { id: string; username: string; profile?: { displayName: string | null } | null } | null | undefined) {
+    const url = process.env.REALTIME_URL || null;
+    const secret = process.env.REALTIME_SECRET ?? "";
+    if (!url || !secret) return { url: null, ticket: null };
+    if (!user) return { url, ticket: null };
+    const season = await this.season();
+    const member = season ? await this.db.digMember.findUnique({ where: { userId_installationId: { userId: user.id, installationId: season.id } } }) : null;
+    const ticket = await signTicket({ u: user.id, n: user.username, d: user.profile?.displayName ?? null, c: member?.crew ?? null, q: member?.squeekId ?? null, l: member?.squeekLevel ?? null, exp: Math.floor(Date.now() / 1000) + 300 }, secret);
+    return { url, ticket };
   }
 
   private async requireSeason() {

@@ -1,7 +1,8 @@
 "use client";
 import { formatInt, formatSqk } from "@stm/shared";
 import { useEffect, useRef, useState } from "react";
-import { useApi } from "@/lib/api";
+import { api, useApi } from "@/lib/api";
+import { refreshMultiplayer } from "@/lib/multiplayer";
 import { useWorld } from "@/lib/store";
 import { useLoadMe, useMe } from "./account";
 import { Empty, ErrorNote, Facts, Heading, Loading, Section } from "./ui";
@@ -11,6 +12,7 @@ interface Owned { wallet: string; installationId: string; partial: boolean; coun
 interface Detail { tokenId: string; name: string; level: number; basePower: string; mergeState: string | null; nextMergeHeight: string | null; burned: boolean; image: string | null; attributes: { trait: string; value: string }[] }
 
 const STORE = "stm.viewWallet";
+const CONNECTED = "stm.viewWalletConnected";
 const custodyLabel = (c: string) => (c === "staking" ? "Staked" : c === "wallet" ? "In wallet" : c);
 const OFFICIAL = "https://sepolia.squeekchain.com/squeeks";
 
@@ -32,14 +34,36 @@ export function SqueekArt({ tokenId, size = 120 }: { tokenId: string; size?: num
   );
 }
 
+/** Others only see a Squeek the server has confirmed you hold. If it can't confirm one, they see your hamster. */
+function shareSqueek(tokenId: string | null) {
+  api("/dig/squeek", { method: "POST", body: { tokenId } }).catch(() => undefined).finally(refreshMultiplayer);
+}
+
 export function SqueekDetail({ id }: { id: string }) {
   const { data, error, loading, reload } = useApi<Detail>(`/squeeks/${id}`);
+  const character = useWorld((s) => s.character);
+  const setCharacter = useWorld((s) => s.setCharacter);
+  const closePanel = useWorld((s) => s.closePanel);
+  const open = useWorld((s) => s.openPanel);
+  const me = useMe((s) => s.me);
+  let connected = !!me?.wallet;
+  try {
+    connected ||= localStorage.getItem(CONNECTED) === "1";
+  } catch {}
   if (loading && !data) return <Loading />;
   if (error || !data) return <ErrorNote retry={reload}>{error ?? "That Squeek can't be shown."}</ErrorNote>;
   return (
     <article>
       <Heading eyebrow="Your Squeek" title={data.name} />
       <div className="max-w-xs"><SqueekArt tokenId={id} size={320} /></div>
+      <div className="flex flex-wrap gap-2 mt-3">
+        {connected ? (
+          character === id
+            ? <button className="btn" onClick={() => { setCharacter(null); shareSqueek(null); }}>Go back to the hamster</button>
+            : <button className="btn btn-gold" onClick={() => { setCharacter(id); shareSqueek(id); closePanel(); }}>Play as this Squeek</button>
+        ) : <p className="text-xs text-gray">Connect your wallet in My Squeeks to play as this Squeek. A pasted address can only look.</p>}
+        <button className="btn" onClick={() => open({ kind: "contribute" })}>Deposit, merge or claim</button>
+      </div>
       <Section title="Details">
         <Facts rows={[
           ["Level", String(data.level)],
@@ -69,12 +93,16 @@ export function SqueeksPanel() {
     } catch {}
     setWallet(me?.wallet ?? saved);
   }, [me?.wallet]);
-  const use = (w: string | null) => {
+  const setCharacter = useWorld((s) => s.setCharacter);
+  const use = (w: string | null, connected = false) => {
     setWallet(w);
     setNote(null);
+    if (!w) setCharacter(null);
     try {
       if (w) localStorage.setItem(STORE, w);
       else localStorage.removeItem(STORE);
+      if (connected) localStorage.setItem(CONNECTED, "1");
+      else localStorage.removeItem(CONNECTED);
     } catch {}
   };
   const connect = async () => {
@@ -82,7 +110,7 @@ export function SqueeksPanel() {
     if (!window.ethereum) return setNote("No wallet found in this browser. Paste your address instead, or open this in your wallet app's browser.");
     try {
       const [a] = (await window.ethereum.request({ method: "eth_requestAccounts" })) as string[];
-      if (a) use(a);
+      if (a) use(a, true);
     } catch {
       setNote("The wallet didn't connect.");
     }
@@ -90,7 +118,7 @@ export function SqueeksPanel() {
   const { data, error, loading, reload } = useApi<Owned>(wallet ? `/squeeks/owner/${wallet}` : null);
   return (
     <div>
-      <Heading eyebrow="Your collection" title="My Squeeks" sub="Connect the wallet you use on Squeekchain to see your Squeeks here. Connecting only reads your address. It asks for no signature and can't move anything." />
+      <Heading eyebrow="Your collection" title="My Squeeks" sub="Connect the wallet you use on Squeekchain to see your Squeeks and play as one. Connecting only reads your address. It asks for no signature and can't move anything." />
       {!wallet ? (
         <div className="card p-3 space-y-3">
           <button className="btn btn-gold" onClick={connect}>Connect wallet</button>
@@ -132,7 +160,10 @@ export function SqueeksPanel() {
           ) : <Empty>This wallet doesn't hold any Squeeks in the current release.</Empty>}
           {data.partial && <p className="text-xs text-gray mt-2">Showing the first 500. This wallet holds more.</p>}
           <p className="text-xs text-gray mt-3">From release {data.installationId}. Squeekchain is on testnet, so these have no monetary value.</p>
-          <p className="mt-2"><a className="text-sky underline underline-offset-2 text-sm" href={OFFICIAL} target="_blank" rel="noopener noreferrer nofollow">Stake or merge on the official site ↗</a></p>
+          <div className="flex flex-wrap items-center gap-3 mt-2">
+            <button className="btn btn-gold" onClick={() => open({ kind: "contribute" })}>Contribute on-chain</button>
+            <a className="text-sky underline underline-offset-2 text-sm" href={OFFICIAL} target="_blank" rel="noopener noreferrer nofollow">Official site ↗</a>
+          </div>
         </>
       ))}
     </div>

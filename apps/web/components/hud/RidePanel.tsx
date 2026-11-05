@@ -2,6 +2,7 @@
 import { formatInt, mmPerSecToKmh } from "@stm/shared";
 import { useEffect, useRef, useState } from "react";
 import { useApi } from "@/lib/api";
+import { net } from "@/lib/multiplayer";
 import { useWorld } from "@/lib/store";
 import { input } from "../world/input";
 import { ride, rideTap, rideTier, speedMmS } from "../world/ride";
@@ -18,6 +19,7 @@ export function RidePanel() {
     return () => clearInterval(t);
   }, []);
   const where = useWorld((s) => s.ride);
+  const riders = where ? net.wheels[where === "hub" ? 1 : 2][1] : 0;
   const best = ride.topSpeedMmS;
   const tier = rideTier(ride.rpm);
   const beat = record !== null && best > record;
@@ -28,6 +30,7 @@ export function RidePanel() {
           <h2 className="title text-2xl text-amber">{where === "hub" ? "The giant wheel" : "Practice wheel"} <span className={`ml-1 font-data text-xs align-middle ${tier === "OVERDRIVE" ? "text-rose" : tier === "INSANE" ? "text-amber" : "text-gray"}`}>{tier}</span></h2>
           <button className="btn" onClick={() => setRide(false)}>Hop off</button>
         </div>
+        {riders >= 2 && <p role="status" className="text-xs text-mint mt-1">{riders} running together. Everyone's steps push this wheel.</p>}
         <div className="grid grid-cols-3 gap-2 mt-2 font-data text-center">
           <div><p className="label">RPM</p><p className="text-2xl text-ink">{Math.round(ride.rpm)}</p></div>
           <div><p className="label">km/h</p><p className="text-2xl text-ink">{mmPerSecToKmh(speedMmS(ride.rpm))}</p></div>
@@ -43,7 +46,7 @@ export function RidePanel() {
           RUN <span className="hidden md:inline opacity-70">(tap Space, W or X)</span><span className="md:hidden">(keep tapping)</span>
         </button>
         <button className="btn w-full mt-1 py-2 touch-manipulation select-none" aria-label="Hold to boost" onPointerDown={(e) => { e.preventDefault(); input.keyBoost = 1; }} onPointerUp={() => { input.keyBoost = 0; }} onPointerCancel={() => { input.keyBoost = 0; }} onPointerLeave={() => { input.keyBoost = 0; }}>
-          HOLD TO BOOST <span className="hidden md:inline opacity-70">(or hold Shift or R2)</span>
+          HOLD TO BOOST <span className="hidden md:inline opacity-70">(or hold Shift or R1)</span>
         </button>
         <p className="text-[11px] text-gray mt-2">Just for fun. Your run isn't work, isn't recorded, and never counts as wheel data.</p>
       </section>

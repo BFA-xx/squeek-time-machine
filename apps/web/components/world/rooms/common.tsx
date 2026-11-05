@@ -40,9 +40,9 @@ export function clickable(open: (p: Panel) => void, panel: Panel) {
 /** A carved sign over a room's far wall, set in the brand's display face and served from this site. */
 export function RoomSign({ text, color, z = -15.2, y = 5.8 }: { text: string; color: string; z?: number; y?: number }) {
   return (
-    <Text font={WORLD_FONT} position={[0, y, z]} fontSize={1.5} color={color} anchorX="center" anchorY="middle" letterSpacing={0.04} outlineWidth={0.02} outlineColor="#0b0b0d">
+    <Text font={WORLD_FONT} position={[0, y, z]} fontSize={0.95} color="#efeadf" anchorX="center" anchorY="middle" letterSpacing={0.16}>
       {text.toUpperCase()}
-      <meshBasicMaterial color={color} toneMapped={false} />
+      <meshBasicMaterial color="#efeadf" toneMapped={false} />
     </Text>
   );
 }

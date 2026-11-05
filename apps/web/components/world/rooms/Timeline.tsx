@@ -22,12 +22,15 @@ function pillarPosition(i: number, total: number): [number, number] {
   return z > 0 && Math.abs(x) < AISLE ? [x < 0 ? -AISLE : AISLE, z] : [x, z];
 }
 
+const DARK = new THREE.Color("#1d1916");
+
 export default function TimelineRoom({ index }: { index: number }) {
   const open = useWorld((s) => s.openPanel);
   const bump = useWorld((s) => s.eventBump);
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [hover, setHover] = useState<number | null>(null);
   const ref = useRef<THREE.InstancedMesh>(null);
+  const caps = useRef<THREE.InstancedMesh>(null);
   useEffect(() => {
     let live = true;
     api<{ events: EventSummary[] }>("/events?limit=100&minSignificance=2").then((r) => live && setEvents(r.events.slice().reverse())).catch(() => undefined);
@@ -50,9 +53,24 @@ export default function TimelineRoom({ index }: { index: number }) {
       d.scale.set(1, h, 1);
       d.updateMatrix();
       m.setMatrixAt(i, d.matrix);
-      m.setColorAt(i, color.set(COLORS[e.categorySlug] ?? "#82828f"));
+      // Dark columns, with each record's category kept to a thin lit cap.
+      const tone = COLORS[e.categorySlug] ?? "#82828f";
+      m.setColorAt(i, color.set(tone).lerp(DARK, 0.82));
+      const cap = caps.current;
+      if (cap) {
+        d.position.set(x, h + 0.012, z);
+        d.scale.set(1, 1, 1);
+        d.updateMatrix();
+        cap.setMatrixAt(i, d.matrix);
+        cap.setColorAt(i, color.set(tone));
+      }
     });
     m.count = events.length;
+    if (caps.current) {
+      caps.current.count = events.length;
+      caps.current.instanceMatrix.needsUpdate = true;
+      if (caps.current.instanceColor) caps.current.instanceColor.needsUpdate = true;
+    }
     m.instanceMatrix.needsUpdate = true;
     if (m.instanceColor) m.instanceColor.needsUpdate = true;
     m.computeBoundingSphere();
@@ -66,8 +84,12 @@ export default function TimelineRoom({ index }: { index: number }) {
         onClick={(e) => { e.stopPropagation(); if (e.delta < 6 && e.instanceId !== undefined && events[e.instanceId]) { audio?.select(); open({ kind: "event", id: events[e.instanceId].id }); } }}
         onPointerMove={(e) => { e.stopPropagation(); setHover(e.instanceId ?? null); document.body.style.cursor = "pointer"; }}
         onPointerOut={() => { setHover(null); document.body.style.cursor = ""; }}>
-        <boxGeometry args={[0.62, 1, 0.62]} />
-        <meshStandardMaterial roughness={0.42} metalness={0.2} />
+        <boxGeometry args={[0.42, 1, 0.42]} />
+        <meshStandardMaterial roughness={0.36} metalness={0.5} />
+      </instancedMesh>
+      <instancedMesh ref={caps} args={[undefined, undefined, 100]}>
+        <boxGeometry args={[0.42, 0.025, 0.42]} />
+        <meshBasicMaterial toneMapped={false} />
       </instancedMesh>
       {hovered && hoveredAt && (
         <Html position={[hoveredAt[0], 3.6, hoveredAt[1]]} center style={{ pointerEvents: "none", width: 220 }}>

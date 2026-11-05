@@ -203,6 +203,21 @@ describe("The Great Dig", () => {
     expect(screen.getByRole("button", { name: /^Asleep/ })).toBeDisabled();
     expect(screen.getByText(/You were right: \+40/)).toBeInTheDocument();
   });
+  it("shows today's tasks, and only offers a claim the server says is ready", async () => {
+    const { DigPanel } = await import("@/components/panels/dig");
+    useMe.setState({ me: { id: "1", username: "ann", displayName: null, bio: "", wallet: null, role: "member" }, loaded: true });
+    const tasks = [
+      { slug: "call", name: "Call the next shift", how: "h", points: 10, claimed: false, ready: true, room: false },
+      { slug: "memory", name: "Write a memory", how: "Add a memory", points: 5, claimed: false, ready: false, room: false },
+      { slug: "hello", name: "Say hello", how: "Send an emote", points: 3, claimed: true, ready: false, room: true },
+    ];
+    mockApi({ "/dig/squeeks": { wallet: null, squeeks: [] }, "/dig": { ...state, me: { crew: "sandbath", squeekId: null, squeekLevel: null, openCall: null, points: 3, wins: 0, played: 0, streak: 0, recent: [], tasks, taskPoints: 3 } } });
+    render(<DigPanel />);
+    expect(await screen.findByRole("button", { name: "Claim +10" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /^Claim/ })).toHaveLength(1);
+    expect(screen.getByText("Done: Say hello")).toBeInTheDocument();
+    expect(screen.getByText(/aren't on chain/)).toBeInTheDocument();
+  });
   it("explains when the dig can't run", async () => {
     const { DigPanel } = await import("@/components/panels/dig");
     mockApi({ "/dig": { status: "unavailable", reason: "The round clock isn't known yet." }, "/auth/me": { user: null } });

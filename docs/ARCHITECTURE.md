@@ -68,3 +68,12 @@ A free game with no money in it. `packages/shared/src/dig.ts` holds the rules, a
 - Three independent reports hide a post until a moderator looks at it.
 - Moderation runs on `/v1/admin/*` with the `x-admin-token` header. There's no moderation screen yet.
 - Wallet sign-in is optional, uses a single-use signed message, and never asks for a transaction.
+
+## Multiplayer
+
+`RoomCore` in `packages/shared/src/realtime.ts` holds the room's rules and knows nothing about its host. `apps/realtime` wraps it twice: `worker.ts` for a Cloudflare Durable Object, and `node.ts` for plain Node, which is also what the tests run against.
+
+The API signs a five-minute ticket with `REALTIME_SECRET` carrying the user's verified name, crew and shown Squeek. The room trusts nothing else about who a player is. In return the room signs receipts for what only it can see, and `DigService.claimTask` verifies them with the same secret. Receipts and tickets can't stand in for each other.
+
+In the browser, `lib/multiplayer.ts` keeps fast-changing state outside React. `OtherPlayers.tsx` draws only the nearest players, and React re-renders only when someone joins or leaves.
+

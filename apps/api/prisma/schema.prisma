@@ -222,6 +222,8 @@ model User {
   reports       ModerationReport[] @relation("reporter")
   digMembers    DigMember[]
   digCalls      DigCall[]
+  digContributions DigContribution[]
+  digTasks      DigTask[]
 }
 
 model UserProfile {
@@ -422,4 +424,39 @@ model DigChamber {
   crew            String?
 
   @@id([installationId, number])
+}
+
+/// A real transaction a member sent to Squeekchain's contracts, confirmed from its receipt.
+model DigContribution {
+  txHash         String   @id
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  installationId String
+  crew           String?
+  kind           String
+  points         Int
+  tokenIds       String[]
+  blockNumber    BigInt
+  createdAt      DateTime @default(now())
+
+  @@index([installationId, createdAt(sort: Desc)])
+  @@index([userId, installationId])
+  @@index([installationId, crew])
+}
+
+/// A daily task the server has confirmed. Only game points: no money value, nothing on chain.
+model DigTask {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  installationId String
+  crew           String
+  day            String // UTC date, 2026-11-05
+  task           String
+  points         Int
+  createdAt      DateTime @default(now())
+
+  @@unique([userId, installationId, day, task])
+  @@index([installationId, crew])
+  @@index([installationId, createdAt])
 }

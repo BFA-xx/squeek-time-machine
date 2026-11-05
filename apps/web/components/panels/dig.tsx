@@ -2,6 +2,7 @@
 import { BANDS, CREWS, formatInt, formatUtc, type BandSlug, type CrewSlug } from "@stm/shared";
 import { useEffect, useState } from "react";
 import { api, useApi } from "@/lib/api";
+import { net, refreshMultiplayer } from "@/lib/multiplayer";
 import { useWorld } from "@/lib/store";
 import { useLoadMe, useMe } from "./account";
 import { Empty, ErrorNote, Heading, Loading, ProofBadge, Section, Stat, Time, TxLink } from "./ui";
@@ -21,7 +22,8 @@ export interface DigState {
   chambers: { number: number; target: string; brokeAt: string; transactionHash: string; crew: CrewSlug | null }[];
   crews: { slug: CrewSlug; name: string; color: string; motto: string; points: number; members: number; chambers: number }[];
   leaderboard: { username: string; displayName: string | null; points: number; wins: number; crew: CrewSlug | null; squeekId: string | null; squeekLevel: number | null }[];
-  me: { crew: CrewSlug | null; squeekId: string | null; squeekLevel: number | null; openCall: BandSlug | null; points: number; wins: number; played: number; streak: number; recent: { shiftIndex: number; band: BandSlug; correct: boolean | null; points: number | null }[] } | null;
+  contributions?: { txHash: string; kind: string; points: number; username: string; displayName: string | null }[];
+  me: { tasks?: { slug: string; name: string; how: string; points: number; claimed: boolean; ready: boolean; room: boolean }[]; taskPoints: number; crew: CrewSlug | null; squeekId: string | null; squeekLevel: number | null; openCall: BandSlug | null; points: number; wins: number; played: number; streak: number; recent: { shiftIndex: number; band: BandSlug; correct: boolean | null; points: number | null }[] } | null;
 }
 
 const bandName = (b: string) => BANDS.find((x) => x.slug === b)?.name ?? b;
@@ -87,6 +89,7 @@ export function DigPanel({ focus }: { focus?: "call" | "crew" }) {
     try {
       await api(path, { method: "POST", body });
       await reload();
+      if (path === "/dig/crew") refreshMultiplayer();
       bump();
     } catch (e) {
       setNote((e as Error).message);
@@ -112,6 +115,30 @@ export function DigPanel({ focus }: { focus?: "call" | "crew" }) {
         <div className="h-2 bg-line mt-2" role="progressbar" aria-valuenow={Math.round(progress)} aria-valuemin={0} aria-valuemax={100} aria-label={`Progress through chamber ${data.chamber.number}`}><div className="h-full bg-[#ff8a3d]" style={{ width: `${progress}%` }} /></div>
         <p className="text-xs text-dim mt-1 font-data">{formatInt(data.work)} of {formatInt(data.chamber.target)} settled work</p>
       </section>
+
+      {me?.crew && !!me.tasks?.length && (
+        <section aria-label="Today's tasks" className="mt-5">
+          <h3 className="label mb-2">Today's tasks · new ones at 00:00 UTC</h3>
+          <ul className="space-y-1.5">
+            {me.tasks.map((t) => {
+              const proof = t.room ? net.proofs[t.slug] : undefined;
+              const canClaim = !t.claimed && (t.ready || !!proof);
+              return (
+                <li key={t.slug} className="card p-2 flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className={`text-sm ${t.claimed ? "text-mint" : "text-ink"}`}>{t.claimed ? "Done: " : ""}{t.name}</p>
+                    {!t.claimed && <p className="text-xs text-gray">{t.how}</p>}
+                  </div>
+                  {canClaim
+                    ? <button className="btn btn-gold shrink-0" disabled={busy} onClick={() => act(`/dig/tasks/${t.slug}`, { proof })}>Claim +{t.points}</button>
+                    : <span className="font-data text-xs text-dim shrink-0">+{t.points}</span>}
+                </li>
+              );
+            })}
+          </ul>
+          <p className="text-xs text-gray mt-1">The server checks each task itself. Wheel and hello tasks are confirmed by the multiplayer room. These are game points, and they aren't on chain.</p>
+        </section>
+      )}
 
       <section id="dig-crew" className="mt-5">
         <h3 className="label mb-2">{me?.crew ? `Your crew: ${crewOf(me.crew)?.name}` : "Pick a crew"}</h3>
@@ -151,6 +178,14 @@ export function DigPanel({ focus }: { focus?: "call" | "crew" }) {
           <Stat label="Streak" value={String(me.streak)} />
         </div>
       )}
+
+      <section className="card p-3 mt-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div><h3 className="title text-xl text-ink">Contribute on-chain</h3><p className="text-xs text-gray">Pull a checkpoint or put a Squeek to work for crew points.</p></div>
+          <button className="btn btn-gold" onClick={() => open({ kind: "contribute" })}>Open</button>
+        </div>
+        {!!data.contributions?.length && <ul className="mt-2 space-y-1">{data.contributions.slice(0, 4).map((c) => <li key={c.txHash} className="flex flex-wrap items-center justify-between gap-2 text-xs text-dim border-t border-line pt-1"><span>{c.displayName ?? c.username}: {c.kind} · +{c.points}</span><TxLink hash={c.txHash} /></li>)}</ul>}
+      </section>
 
       <Section title={`Shift ${running.index} is running`}>
         <p className="text-sm text-dim">Ends {formatUtc(running.endsAt)}, then settles once the rounds reach Ethereum.</p>
@@ -198,7 +233,7 @@ export function DigPanel({ focus }: { focus?: "call" | "crew" }) {
         ) : <Empty>Nobody has scored yet. It could be you.</Empty>}
       </Section>
 
-      {user && me?.crew && <Squeeks current={me.squeekId} onDone={() => { void reload(); bump(); }} />}
+      {user && me?.crew && <Squeeks current={me.squeekId} onDone={() => { void reload(); bump(); refreshMultiplayer(); }} />}
     </div>
   );
 }

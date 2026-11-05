@@ -69,7 +69,7 @@ export default function VaultRoom({ index }: { index: number }) {
       pos.updateMatrix();
       m.setMatrixAt(i, pos.matrix);
       const newest = i >= n - 18;
-      m.setColorAt(i, col.set(b.height === highlight ? "#fdfbc8" : newest ? "#7dffb6" : "#35d07f"));
+      m.setColorAt(i, col.set(b.height === highlight ? "#fdfbc8" : newest ? "#58c48d" : "#223029"));
     });
     m.count = n;
     m.instanceMatrix.needsUpdate = true;
@@ -87,14 +87,14 @@ export default function VaultRoom({ index }: { index: number }) {
   return (
     <group>
       <RoomSign text="The Block Vault" color="#35d07f" y={6.2} />
-      <mesh position={[0, 1, 0]} castShadow {...clickable(open, { kind: "room", room: "vault" })}><cylinderGeometry args={[1.2, 2, 2, 8]} /><meshStandardMaterial color="#1f2a24" metalness={0.5} roughness={0.5} /></mesh>
-      <mesh position={[0, 2.5, 0]}  {...clickable(open, { kind: "room", room: "vault" })}><octahedronGeometry args={[0.8]} /><meshStandardMaterial color="#35d07f" emissive="#35d07f" emissiveIntensity={1.2} toneMapped={false} /></mesh>
+      <mesh position={[0, 1, 0]} castShadow {...clickable(open, { kind: "room", room: "vault" })}><cylinderGeometry args={[1.05, 1.5, 2, 48]} /><meshStandardMaterial color="#2a241e" metalness={0.55} roughness={0.42} /></mesh>
+      <mesh position={[0, 2.5, 0]}  {...clickable(open, { kind: "room", room: "vault" })}><octahedronGeometry args={[0.8]} /><meshStandardMaterial color="#6fd9a4" metalness={0.3} roughness={0.2} emissive="#35d07f" emissiveIntensity={0.45} /></mesh>
       <instancedMesh ref={ref} args={[undefined, undefined, MAX]} castShadow
         onClick={(e) => { e.stopPropagation(); if (e.delta < 6 && e.instanceId !== undefined && blocks[e.instanceId]) { audio?.select(); open({ kind: "block", height: blocks[e.instanceId].height }); } }}
         onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "pointer"; }}
         onPointerOut={() => { document.body.style.cursor = ""; }}>
         <boxGeometry args={[0.72, 0.38, 0.5]} />
-        <meshStandardMaterial roughness={0.35} metalness={0.45} emissive="#35d07f" emissiveIntensity={0.25} />
+        <meshStandardMaterial roughness={0.32} metalness={0.5} emissive="#35d07f" emissiveIntensity={0.04} />
       </instancedMesh>
       <mesh ref={beacon} visible={false}><coneGeometry args={[0.3, 0.6, 8]} /><meshBasicMaterial color="#fdfbc8" toneMapped={false} /></mesh>
     </group>

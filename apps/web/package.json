@@ -22,6 +22,7 @@
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "three": "^0.180.0",
+    "viem": "^2.37.6",
     "zustand": "^5.0.8"
   },
   "devDependencies": {

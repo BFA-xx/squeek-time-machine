@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { api } from "@/lib/api";
 import { useWorld } from "@/lib/store";
 import { audio } from "@/lib/audio";
-import { ride } from "../ride";
+import { practiceWheel } from "../ride";
 import { GiantWheel } from "../Wheel";
 import { clickable, RoomSign, useSolid, useSpots, WORLD_FONT } from "./common";
 
@@ -50,7 +50,7 @@ export default function WheelRoom({ index }: { index: number }) {
       d.scale.set(1, h, 1);
       d.updateMatrix();
       m.setMatrixAt(i, d.matrix);
-      m.setColorAt(i, col.set(known ? "#f2c230" : "#3a3a46"));
+      m.setColorAt(i, col.set(known ? "#a98a4a" : "#2a2622"));
     }
     m.instanceMatrix.needsUpdate = true;
     if (m.instanceColor) m.instanceColor.needsUpdate = true;
@@ -70,19 +70,19 @@ export default function WheelRoom({ index }: { index: number }) {
     <group>
       <RoomSign text="The Wheel Room" color="#ffc048" />
       <group rotation={[0, Math.PI / 2, 0]} scale={0.62}>
-        <GiantWheel radius={5} width={3} showHamster={false} driver={ride} onClick={() => { if (!useWorld.getState().ride) setRide("wheel"); }} />
+        <GiantWheel radius={5} width={3} showHamster={false} driver={practiceWheel} onClick={() => { if (!useWorld.getState().ride) setRide("wheel"); }} />
       </group>
-      <Text font={WORLD_FONT} position={[0, 7.1, 0]} rotation={[0, 0, 0]} fontSize={0.42} color="#fdfbc8" anchorX="center">
+      <Text font={WORLD_FONT} position={[0, 7.1, 0]} rotation={[0, 0, 0]} fontSize={0.34} letterSpacing={0.12} color="#efeadf" anchorX="center">
         PRACTICE WHEEL · YOUR LEGS, NOT HIS DATA
-        <meshBasicMaterial color="#fdfbc8" toneMapped={false} />
+        <meshBasicMaterial color="#efeadf" toneMapped={false} />
       </Text>
       <group position={[CONSOLE[0], 0, CONSOLE[1]]} rotation={[0, -0.85, 0]} {...clickable(open, { kind: "room", room: "wheel" })}>
-        <mesh position={[0, 0.75, 0]} castShadow><boxGeometry args={[1.5, 1.5, 0.8]} /><meshStandardMaterial color="#2a2530" metalness={0.5} roughness={0.5} /></mesh>
-        <mesh position={[0, 1.62, 0.1]} rotation={[-0.5, 0, 0]}><boxGeometry args={[1.3, 0.05, 0.7]} /><meshStandardMaterial color="#ffc048" emissive="#ffc048" emissiveIntensity={1.1} toneMapped={false} /></mesh>
+        <mesh position={[0, 0.75, 0]} castShadow><boxGeometry args={[1.5, 1.5, 0.8]} /><meshStandardMaterial color="#2a241e" metalness={0.55} roughness={0.42} /></mesh>
+        <mesh position={[0, 1.62, 0.1]} rotation={[-0.5, 0, 0]}><boxGeometry args={[1.3, 0.05, 0.7]} /><meshStandardMaterial color="#3a3026" metalness={0.4} roughness={0.3} emissive="#ffc048" emissiveIntensity={0.28} /></mesh>
       </group>
       <instancedMesh ref={ref} args={[undefined, undefined, 48]} castShadow {...clickable(open, { kind: "room", room: "wheel" })}>
         <boxGeometry args={[0.8, 1, 0.5]} />
-        <meshStandardMaterial roughness={0.5} metalness={0.3} emissive="#f2c230" emissiveIntensity={0.15} />
+        <meshStandardMaterial roughness={0.4} metalness={0.45} emissive="#f2c230" emissiveIntensity={0.03} />
       </instancedMesh>
     </group>
   );

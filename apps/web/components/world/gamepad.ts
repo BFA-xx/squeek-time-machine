@@ -1,10 +1,12 @@
 import { ROOMS, type RoomSlug } from "@stm/shared";
 import { useWorld } from "@/lib/store";
+import { sendEmote } from "@/lib/multiplayer";
+import { hopStart } from "./hop";
 import { ride, rideTap } from "./ride";
 import { input } from "./input";
 
 /** Standard mapping, which Chrome, Edge, Firefox and Safari use for a DualSense. */
-export const PAD = { cross: 0, circle: 1, square: 2, triangle: 3, l1: 4, r1: 5, l2: 6, r2: 7, options: 9, up: 12, down: 13 } as const;
+export const PAD = { cross: 0, circle: 1, square: 2, triangle: 3, l1: 4, r1: 5, l2: 6, r2: 7, options: 9, up: 12, down: 13, left: 14, right: 15 } as const;
 const DEAD = 0.16;
 
 export const deadzone = (v: number) => (Math.abs(v) < DEAD ? 0 : (v - Math.sign(v) * DEAD) / (1 - DEAD));
@@ -32,7 +34,7 @@ export function pollGamepad(dt: number) {
   const store = useWorld.getState();
   if (!announced) {
     announced = true;
-    store.pushToast({ title: "Controller ready: left stick walks, right stick looks, X uses, O goes back, hold R2 to boost", tone: "chain" });
+    store.pushToast({ title: "Controller ready: left stick walks, right stick looks, X uses or hops, O goes back, hold R1 to boost", tone: "chain" });
   }
   const panel = store.panel;
   const lx = deadzone(pad.axes[0] ?? 0), ly = deadzone(pad.axes[1] ?? 0);
@@ -44,21 +46,27 @@ export function pollGamepad(dt: number) {
     input.padY = ly;
     if (rx || ry) input.onOrbit?.(rx * dt * 520, ry * dt * 340);
   }
-  // R2 is pressure-sensitive, so a half press gives a half boost.
-  input.padBoost = pad.buttons[PAD.r2]?.value ?? 0;
+  // Hold R1 to boost: X taps count for more on a wheel, and you sprint on foot.
+  input.padBoost = pad.buttons[PAD.r1]?.pressed ? 1 : 0;
   const zoom = (pad.buttons[PAD.down]?.pressed ? 1 : 0) - (pad.buttons[PAD.up]?.pressed ? 1 : 0);
   if (!panel && zoom) input.onZoom?.(zoom * dt * 1100);
 
   const pressed = (b: number) => !!pad.buttons[b]?.pressed && !held[b];
   if (store.ride) {
     ride.boost = Math.max(input.padBoost, input.keyBoost);
-    if (pressed(PAD.cross) || pressed(PAD.r1)) rideTap();
+    if (pressed(PAD.cross)) rideTap();
     if (pressed(PAD.circle)) store.setRide(false);
   } else if (panel) {
     if (pressed(PAD.circle)) (store.history.length ? store.backPanel() : store.closePanel());
   } else {
-    if (pressed(PAD.cross)) store.prompt?.action();
-    if (pressed(PAD.r1)) store.requestTravel(nextRoom(store.location, 1));
+    // X uses whatever you're next to. With nothing to use, it hops.
+    if (pressed(PAD.cross)) {
+      if (store.prompt) store.prompt.action();
+      else hopStart();
+    }
+    if (pressed(PAD.right)) sendEmote("wave");
+    if (pressed(PAD.left)) sendEmote("squeek");
+    if (pressed(PAD.l2)) store.requestTravel(nextRoom(store.location, 1));
     if (pressed(PAD.l1)) store.requestTravel(nextRoom(store.location, -1));
     if (pressed(PAD.triangle)) store.openPanel({ kind: "search" });
     if (pressed(PAD.options)) store.openPanel({ kind: "settings" });

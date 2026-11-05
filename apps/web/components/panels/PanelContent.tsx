@@ -1,6 +1,7 @@
 "use client";
 import { useWorld, type Panel } from "@/lib/store";
 import { AccountPanel } from "./account";
+import { ContributePanel } from "./contribute";
 import { DigPanel } from "./dig";
 import { SEEDS } from "./discoveries";
 import { SqueekDetail, SqueeksPanel } from "./squeeks";
@@ -29,6 +30,7 @@ export function PanelContent({ panel }: { panel: Panel }) {
     case "artifact": return <ArtifactView slug={panel.slug} />;
     case "user": return <UserPanel key={panel.username} username={panel.username} />;
     case "dig": return <DigPanel key={panel.focus ?? "all"} focus={panel.focus} />;
+    case "contribute": return <ContributePanel />;
     case "squeeks": return <SqueeksPanel />;
     case "squeek": return <SqueekDetail key={panel.id} id={panel.id} />;
     case "write": return <WritePanel key={panel.mode} mode={panel.mode} />;

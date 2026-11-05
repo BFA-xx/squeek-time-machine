@@ -83,14 +83,14 @@ export default function EvolutionRoom({ index }: { index: number }) {
   return (
     <group>
       <RoomSign text="The Evolution Room" color="#a8baff" y={7.4} />
-      <mesh position={[0, 4.2, 0]} {...clickable(open, { kind: "room", room: "evolution" })}><cylinderGeometry args={[0.32, 0.5, 8.4, 10]} /><meshStandardMaterial color="#2e3350" metalness={0.5} roughness={0.5} /></mesh>
+      <mesh position={[0, 4.2, 0]} {...clickable(open, { kind: "room", room: "evolution" })}><cylinderGeometry args={[0.16, 0.26, 8.4, 32]} /><meshStandardMaterial color="#2a241e" metalness={0.55} roughness={0.42} /></mesh>
       <instancedMesh ref={wall} args={[undefined, undefined, 120]} castShadow {...clickable(open, { kind: "room", room: "evolution" })}>
         <boxGeometry args={[0.42, 1, 0.3]} />
-        <meshStandardMaterial color="#a8baff" emissive="#a8baff" emissiveIntensity={0.3} metalness={0.3} roughness={0.5} />
+        <meshStandardMaterial color="#5f6680" emissive="#a8baff" emissiveIntensity={0.08} metalness={0.55} roughness={0.35} />
       </instancedMesh>
       <instancedMesh ref={spiral} args={[undefined, undefined, 120]} {...clickable(open, { kind: "room", room: "evolution" })}>
         <sphereGeometry args={[0.15, 8, 8]} />
-        <meshStandardMaterial color="#f2c230" emissive="#f2c230" emissiveIntensity={1.1} toneMapped={false} />
+        <meshStandardMaterial color="#c9a24a" emissive="#c9a24a" emissiveIntensity={0.55} metalness={0.5} roughness={0.3} />
       </instancedMesh>
     </group>
   );

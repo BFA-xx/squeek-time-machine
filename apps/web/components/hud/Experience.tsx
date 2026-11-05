@@ -3,6 +3,7 @@ import { ROOMS, formatInt } from "@stm/shared";
 import { AnimatePresence, motion } from "framer-motion";
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
+import { api } from "@/lib/api";
 import { audio } from "@/lib/audio";
 import { loadSettings, useWorld } from "@/lib/store";
 import { useLiveWorld } from "@/lib/use-live";
@@ -11,7 +12,11 @@ import { SEEDS } from "../panels/discoveries";
 import { PanelContent } from "../panels/PanelContent";
 import { input } from "../world/input";
 import { rideTap } from "../world/ride";
+import { EMOTES } from "@stm/shared";
+import { refreshMultiplayer, sendEmote, startMultiplayer, stopMultiplayer } from "@/lib/multiplayer";
+import { hopStart } from "../world/hop";
 import { LiveBadge, SourceBanner } from "./LiveBadge";
+import { PlayersPill } from "./PlayersPill";
 import { RidePanel } from "./RidePanel";
 
 const World = dynamic(() => import("../world/World"), { ssr: false });
@@ -59,7 +64,7 @@ function Walkthrough({ onDone }: { onDone: () => void }) {
   const [step, setStep] = useState(0);
   const steps = [
     { t: "This is the burrow", b: "Squeektoshi's whole history, built underground. It grows on its own as real blocks settle." },
-    { t: "Walk around", b: "Use WASD or the arrow keys, click the floor, use the stick on a phone, or plug in a controller. Drag to look around." },
+    { t: "Walk around", b: "Use WASD or the arrow keys, click the floor, use the stick on a phone, or plug in a controller and hold R1 to sprint. Drag to look around. X or Space hops when there's nothing nearby to use." },
     { t: "Eight tunnels", b: "Each glowing arch leads to a room. Walk in, or jump there using the bar at the bottom." },
     { t: "Play The Great Dig", b: "Straight through the wheel, join a crew and call what the wheel will do next. Real settled rounds decide who was right." },
     { t: "Use what you find", b: "Walk up to anything with a gold ring and press E. Read the artifacts, run the practice wheel, hang a memory lantern. Golden seeds are hidden around too." },
@@ -86,6 +91,21 @@ export function Experience() {
   const [ready, setReady] = useState(false);
   const [canRender, setCanRender] = useState(true);
   const [stage, setStage] = useState<"title" | "flying" | "world">("title");
+  const meId = useMe((s) => s.me?.id);
+  const online = useWorld((s) => s.settings.online);
+  const inWorld = stage !== "title";
+  const signedInBefore = useRef(false);
+  // You only appear to other players once you've actually walked in.
+  useEffect(() => {
+    if (!online || !inWorld) return;
+    startMultiplayer();
+    return stopMultiplayer;
+  }, [online, inWorld]);
+  useEffect(() => {
+    // Signing in or out changes who you are to everyone else.
+    if (signedInBefore.current) refreshMultiplayer();
+    signedInBefore.current = true;
+  }, [meId]);
   const [walkthrough, setWalkthrough] = useState(false);
   const { panel, openPanel, closePanel, backPanel, history, location, prompt, requestTravel, toasts, world, settings, setSettings, found, dropToast } = useWorld();
   const me = useMe((s) => s.me);
@@ -98,7 +118,21 @@ export function Experience() {
     try {
       f = JSON.parse(localStorage.getItem("stm.found") ?? "[]");
     } catch {}
-    useWorld.setState({ settings: s, found: f });
+    let character: string | null = null;
+    try {
+      character = localStorage.getItem("stm.character");
+    } catch {}
+    useWorld.setState({ settings: s, found: f, character });
+    // A character only lasts while the connected wallet still holds it.
+    let wallet: string | null = null;
+    try {
+      wallet = localStorage.getItem("stm.viewWallet");
+    } catch {}
+    if (character && wallet) {
+      api<{ tokens: { tokenId: string }[] }>(`/squeeks/owner/${wallet}`).then((d) => {
+        if (!d.tokens.some((t) => t.tokenId === character)) useWorld.getState().setCharacter(null);
+      }).catch(() => undefined);
+    }
     const q = new URLSearchParams(window.location.search);
     if (s.reducedMotion || q.has("moment") || q.has("block") || q.has("room")) setStage("world");
     setCanRender(hasWebGL());
@@ -123,6 +157,15 @@ export function Experience() {
         return;
       }
       if (e.code === "Escape") closePanel();
+      if (!useWorld.getState().panel) {
+        const n = /^Digit([1-4])$/.exec(e.code);
+        if (n) sendEmote(EMOTES[Number(n[1]) - 1]);
+        // The same rule as X on a controller: it only hops when there's nothing else to use.
+        if (e.code === "Space" && !e.repeat && !useWorld.getState().prompt && !(e.target instanceof HTMLButtonElement || e.target instanceof HTMLAnchorElement)) {
+          e.preventDefault();
+          hopStart();
+        }
+      }
       if ((e.code === "KeyE" || e.code === "Enter") && !useWorld.getState().panel) {
         const p = useWorld.getState().prompt;
         if (p && !(e.target instanceof HTMLButtonElement || e.target instanceof HTMLAnchorElement)) p.action();
@@ -242,7 +285,8 @@ export function Experience() {
                 {location !== "hub" && location !== "tunnel" && <button className="btn bg-bg/70 py-1" onClick={() => openPanel({ kind: "room", room: location })}>About this room</button>}
               </div>
               <div className="bg-bg/60 px-2 py-1 w-fit"><LiveBadge /></div>
-              <SourceBanner compact />
+              {!riding && <SourceBanner compact />}
+              {!riding && <PlayersPill />}
               {found.length > 0 && <p className="label bg-bg/60 px-2 py-1 w-fit">{found.length}/{SEEDS.length} golden seeds</p>}
             </div>
             <nav aria-label="Tools" className="pointer-events-auto flex flex-wrap justify-end gap-1 self-end md:self-auto">

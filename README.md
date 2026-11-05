@@ -10,6 +10,8 @@ A living 3D world built on Squeekchain, with a game at its centre. Visitors walk
 - **The Great Dig:** a free crew game that settles on real rounds. Every 1,000 settled work breaks through a chamber, and players call what the wheel will do in each six-hour shift.
 - **Seven more rooms:** The Beginning, The Timeline, The Wheel Room, The Block Vault, The Evolution Room, The Community Archive and The Future. Walk up to anything with a gold ring to use it.
 - **Practice wheel:** run on a wheel yourself and try to match Squeektoshi's measured top speed. It's clearly separate from real data.
+- **On-chain contributions:** pull the checkpoint, deposit, claim or merge from your own wallet. Each action is checked and simulated first, the server holds no keys, and real transactions earn crew points once their receipts check out.
+- **Play as your Squeek:** connect a wallet and walk around as your own NFT, drawn from its on-chain art.
 - **Controllers:** keyboard, mouse, touch and PS5 DualSense.
 - **Living world engine:** pulls from the official API and the contract's logs, removes duplicates, resumes after interruptions and keeps the last good copy during outages.
 - **I WAS HERE:** visitors attach memories to specific records, kept apart from the official data.
@@ -69,3 +71,12 @@ npm run test:e2e -w apps/web
 | `docs/DEPLOYMENT.md` | Going to production |
 | `deploy/` | pm2 and Caddy examples |
 | `scripts/smoke.sh` | Checks a running deployment from outside |
+
+## Multiplayer
+
+Other players walk the same burrow in real time, in their crew colours, as their confirmed Squeek or as a hamster. People on the same practice wheel or giant wheel add their steps together. Only the name, crew and Squeek the server has checked are shown to others, and there's no chat, so there's no free text to moderate. Nothing about a player's run is ever recorded as wheel data.
+
+Daily tasks are in The Great Dig panel. The server checks each one against real records, and the room signs a receipt for the wheel and hello tasks. They're game points with no money value, and they aren't on chain.
+
+Controls: X, or Space on a keyboard, uses what's next to you. With nothing to use, it hops. 1 to 4 send an emote, and on a controller the D-pad's right and left send a wave and a squeek.
+

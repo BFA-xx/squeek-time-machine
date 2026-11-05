@@ -91,7 +91,7 @@ export function locate(p: V2): RoomSlug | "hub" | "tunnel" {
 
 /** Where a visitor lands when travelling: just inside the door, looking into the room. */
 export function arrivalPoint(target: RoomSlug | "hub"): { x: number; z: number; yaw: number } {
-  if (target === "hub") return { x: 0, z: 17, yaw: Math.PI };
+  if (target === "hub") return { x: 0, z: 12, yaw: Math.PI };
   const i = roomIndex(target);
   const p = roomPoint(i, 0, 7);
   return { x: p.x, z: p.z, yaw: ROOM_ANGLES[i] };

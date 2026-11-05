@@ -270,6 +270,42 @@ test("My Squeeks shows a wallet's real NFTs with no signature", async ({ page })
   await expect(page.getByRole("heading", { name: "Squeek #322" })).toBeVisible();
 });
 
+test("the checkpoint is read and simulated against the real chain, and nothing signs by itself", async ({ page }) => {
+  // A pretend wallet: reads go to a real Sepolia node, and any attempt to send is recorded.
+  await page.addInitScript(() => {
+    const w = window as unknown as { __sent: unknown[]; ethereum: unknown };
+    w.__sent = [];
+    w.ethereum = {
+      request: async ({ method, params }: { method: string; params?: unknown[] }) => {
+        if (method === "eth_requestAccounts" || method === "eth_accounts") return ["0x8535a46fe5fd088732cf98a63dfbc98d4f038082"];
+        if (method === "eth_chainId") return "0xaa36a7";
+        if (method === "eth_sendTransaction" || method === "personal_sign") {
+          w.__sent.push(method);
+          throw new Error("declined by the test wallet");
+        }
+        const r = await fetch("https://sepolia.gateway.tenderly.co", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) });
+        const j = await r.json();
+        if (j.error) throw new Error(j.error.message);
+        return j.result;
+      },
+    };
+  });
+  await page.goto("/archive?room=timeline");
+  await page.getByRole("button", { name: "My Squeeks" }).click();
+  await page.getByRole("button", { name: "Connect wallet" }).click();
+  await page.getByRole("button", { name: "Contribute on-chain" }).click();
+  await page.getByRole("button", { name: "Pull the checkpoint" }).click();
+  await expect(page.getByText(/Simulation passed|Nothing is waiting|new Squeekchain release/)).toBeVisible({ timeout: 30000 });
+  expect(await page.evaluate(() => (window as unknown as { __sent: unknown[] }).__sent)).toEqual([]);
+  const review = page.getByRole("region", { name: "Review before signing" });
+  if (await review.isVisible()) {
+    await expect(review.getByText(/0 ETH plus gas/)).toBeVisible();
+    await review.getByRole("button", { name: "Sign in my wallet" }).click();
+    await expect(page.locator(".card[role=alert]")).toBeVisible({ timeout: 15000 });
+    expect(await page.evaluate(() => (window as unknown as { __sent: unknown[] }).__sent)).toEqual(["eth_sendTransaction"]);
+  }
+});
+
 test("settings hold quality, motion and sound choices across a reload", async ({ page }) => {
   await enterWorld(page);
   await page.getByRole("button", { name: "Settings" }).click();

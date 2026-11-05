@@ -93,7 +93,7 @@ export default function DigRoom({ index }: { index: number }) {
         <Shaft broken={dig ? dig.chamber.number - 1 : 0} progress={(dig?.chamber.progressBps ?? 0) / 10000} />
       </group>
       <group position={[BOARD[0], 0, BOARD[1]]} {...clickable(open, { kind: "dig", focus: "call" })}>
-        <mesh position={[0, 1.7, 0]} castShadow><boxGeometry args={[4.4, 3, 0.25]} /><meshStandardMaterial color="#3a2819" roughness={1} /></mesh>
+        <mesh position={[0, 1.7, 0]} castShadow><boxGeometry args={[4.4, 3, 0.12]} /><meshStandardMaterial color="#2a241e" metalness={0.55} roughness={0.42} /></mesh>
         <Text font={WORLD_FONT} position={[0, 2.65, 0.15]} fontSize={0.44} color="#fdfbc8" anchorX="center">{dig ? `CALL SHIFT ${dig.shift.open.index}` : "CALL THE SHIFT"}<meshBasicMaterial color="#fdfbc8" toneMapped={false} /></Text>
         {["ASLEEP", "STIRRING", "RUNNING", "SPRINTING"].map((b, i) => {
           const on = dig?.me?.openCall === b.toLowerCase();

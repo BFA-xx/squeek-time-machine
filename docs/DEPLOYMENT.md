@@ -72,6 +72,10 @@ Run only `stm-api` on the server, expose it through your proxy, and set `API_INT
 
 Vercel's rewrites can cut long-lived streams. If live updates drop every few minutes, the page reconnects by itself and also refreshes world state every 60 seconds.
 
+## When Squeekchain ships a new release
+
+On-chain actions only target the addresses pinned in `packages/shared/src/chain.ts`, copied from the published [deployment record](https://docs.squeekchain.com/assets/deployments/sepolia.json). If the live release changes, those actions stop by themselves, and the site says so. To turn them back on, update the addresses and `PINNED_RELEASE`, check them against the record, and redeploy.
+
 ## After deploying
 
 ```bash
@@ -81,3 +85,29 @@ scripts/smoke.sh https://time.example.com
 It checks the pages, API, preview images, live stream and locked routes from outside. Then open `/api/v1/world/state`, and check that `sources` shows `ok` for most feeds and that `counts.blocks` has filled in. The official API is in active development and its feeds do go down, so one `unavailable` source is normal. `schema_mismatch` is the one to act on: the official format changed, so update `packages/shared/src/schemas.ts`.
 
 Back up the database. The API only serves the current installation, so this archive may hold the only copy of history from older releases.
+
+## Multiplayer
+
+Multiplayer is optional. Leave `REALTIME_URL` empty and the game stays single-player.
+
+The room runs on a Cloudflare Worker with one Durable Object, using `apps/realtime/src/worker.ts`. It needs a Cloudflare account, and the Workers Free plan has been the target. Check Cloudflare's current limits before relying on them. Over a limit the room stops answering until the daily reset, and the game carries on single-player.
+
+```bash
+cd apps/realtime
+# Set ALLOWED_ORIGINS in wrangler.toml to your site first.
+npx wrangler login
+npx wrangler secret put REALTIME_SECRET
+npx wrangler deploy
+```
+
+Then give the API the same secret and the room's address:
+
+```bash
+REALTIME_URL=wss://squeek-time-machine-realtime.YOURNAME.workers.dev
+REALTIME_SECRET=the-same-long-random-string
+```
+
+To host it yourself, `apps/realtime/src/node.ts` runs the same room on Node: `npm run build -w apps/realtime`, then `npm start -w apps/realtime`, behind a proxy that terminates TLS.
+
+Positions aren't saved. A browser sends one only when it changes, at most four times a second, and disconnects after a minute in a background tab.
+

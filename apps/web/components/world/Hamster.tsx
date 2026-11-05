@@ -12,6 +12,7 @@ const DARK = "#1b1210";
 export function Hamster({ speedRef, scale = 1, asleep = false, wheelRun = false, crewColor, stars = 0 }: { speedRef?: React.RefObject<number>; scale?: number; asleep?: boolean; wheelRun?: boolean; crewColor?: string; stars?: number }) {
   const legs = useRef<(THREE.Mesh | null)[]>([]);
   const body = useRef<THREE.Group>(null);
+  const root = useRef<THREE.Group>(null);
   const t = useRef(Math.random() * 10);
   useFrame((_, dt) => {
     const speed = wheelRun ? 6 : speedRef?.current ?? 0;
@@ -23,11 +24,11 @@ export function Hamster({ speedRef, scale = 1, asleep = false, wheelRun = false,
     if (body.current) {
       const breathe = asleep ? Math.sin(t.current * 0.35) * 0.018 : Math.sin(t.current * 0.6) * 0.008;
       body.current.scale.y = 1 + breathe;
-      body.current.position.y = speed > 0.1 ? Math.abs(Math.sin(t.current)) * 0.05 : 0;
+      body.current.position.y = 0;
     }
   });
   return (
-    <group scale={scale}>
+    <group ref={root} scale={scale}>
       <group ref={body} rotation={asleep ? [0.12, 0, 0] : [0, 0, 0]}>
         <mesh castShadow position={[0, 0.42, 0]} scale={[0.5, 0.42, 0.62]}><sphereGeometry args={[1, 18, 14]} /><meshStandardMaterial color={FUR} roughness={0.95} /></mesh>
         <mesh position={[0, 0.3, 0.1]} scale={[0.42, 0.3, 0.52]}><sphereGeometry args={[1, 14, 10]} /><meshStandardMaterial color={WHITE} roughness={1} /></mesh>
