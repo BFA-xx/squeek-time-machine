@@ -24,6 +24,8 @@ const taskOf = async (agent: ReturnType<typeof request.agent>, slug: string) => 
 beforeAll(async () => {
   process.env.REALTIME_SECRET = SECRET;
   process.env.REALTIME_URL = "ws://localhost:4400";
+  process.env.WEB_ORIGINS = "https://squeek.quest,https://squeek.koslabs.app,http://localhost:3300";
+  process.env.WALLET_DOMAIN = "squeek.koslabs.app";
   app = await makeApp();
   db = app.get(PrismaService);
   dig = app.get(DigService);
@@ -31,6 +33,8 @@ beforeAll(async () => {
 afterAll(async () => {
   delete process.env.REALTIME_SECRET;
   delete process.env.REALTIME_URL;
+  delete process.env.WEB_ORIGINS;
+  delete process.env.WALLET_DOMAIN;
   await app.close();
 });
 beforeEach(async () => {
@@ -117,3 +121,17 @@ describe("the multiplayer pass", () => {
     expect(body).toEqual({ url: null, ticket: null });
   });
 });
+
+describe("wallet sign-in names the site you're on", () => {
+  const ask = (origin: string) => request(app.getHttpServer()).post("/v1/auth/wallet/challenge").set("Origin", origin).send({ address: "0x8535a46fe5fd088732cf98a63dfbc98d4f038082" });
+  it("uses the allowed site the request came from", async () => {
+    expect((await ask("https://squeek.quest").expect(200)).body.message).toMatch(/^squeek\.quest asks you/);
+    expect((await ask("https://squeek.koslabs.app").expect(200)).body.message).toMatch(/^squeek\.koslabs\.app asks you/);
+  });
+  it("falls back to the default with no origin, and never names anything else", async () => {
+    const none = await request(app.getHttpServer()).post("/v1/auth/wallet/challenge").send({ address: "0x8535a46fe5fd088732cf98a63dfbc98d4f038082" }).expect(200);
+    expect(none.body.message).toMatch(/^squeek\.koslabs\.app asks you/);
+    await ask("https://evil.example").expect(403);
+  });
+});
+

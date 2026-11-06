@@ -61,11 +61,18 @@ export class AuthService {
     if (token) await this.db.session.deleteMany({ where: { tokenHash: hashToken(token) } });
   }
 
-  async walletChallenge(address: string) {
+  /** The site named in the sign-in message. Only an allowed site can be named, so a wallet never shows one that isn't ours. */
+  private walletDomain(origin?: string) {
+    const allowed = (process.env.WEB_ORIGINS ?? "").split(",").map((s) => s.trim());
+    if (origin && allowed.includes(origin)) return new URL(origin).host;
+    return process.env.WALLET_DOMAIN ?? "localhost:3300";
+  }
+
+  async walletChallenge(address: string, origin?: string) {
     if (!isAddress(address)) throw new BadRequestException("That isn't a wallet address.");
     const checksum = getAddress(address);
     const nonce = randomBytes(16).toString("hex");
-    const domain = process.env.WALLET_DOMAIN ?? "localhost:3300";
+    const domain = this.walletDomain(origin);
     const message = `${domain} asks you to sign in to Squeek Time Machine.\n\nThis only proves you own this wallet. It isn't a transaction and costs nothing.\n\nWallet: ${checksum}\nNonce: ${nonce}`;
     await this.db.walletChallenge.create({ data: { nonce, address: checksum, message, expiresAt: new Date(Date.now() + 10 * 60_000) } });
     return { nonce, message };

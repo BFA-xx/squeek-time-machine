@@ -42,7 +42,7 @@ export class CommunityController {
     return { user: u ? this.auth.publicUser(u) : null };
   }
   @Throttle(AUTH) @Post("auth/wallet/challenge") @HttpCode(200)
-  challenge(@Body() b: Record<string, unknown>) { return this.auth.walletChallenge(str(b.address)); }
+  challenge(@Req() req: Request, @Body() b: Record<string, unknown>) { return this.auth.walletChallenge(str(b.address), req.headers.origin); }
   @Throttle(AUTH) @Post("auth/wallet/verify") @HttpCode(200)
   async verify(@Body() b: Record<string, unknown>, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
     if (!isValidSignatureShape(b.signature)) throw new BadRequestException("That isn't a signature.");
