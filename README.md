@@ -80,3 +80,8 @@ Daily tasks are in The Great Dig panel. The server checks each one against real 
 
 Controls: X, or Space on a keyboard, uses what's next to you. With nothing to use, it hops. 1 to 4 send an emote, and on a controller the D-pad's right and left send a wave and a squeek.
 
+## Builder programme
+
+Squeekchain's builder programme rechecks this line daily, so keep it:
+
+squeekchain-project: 7d5e617b-3cae-401b-8987-2aab281a8e1b

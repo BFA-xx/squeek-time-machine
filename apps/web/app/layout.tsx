@@ -13,6 +13,8 @@ export const metadata: Metadata = {
   icons: { icon: "/brand/squeekchain-mark.png" },
   openGraph: { title: "Squeek Time Machine", description: "Don't just read Squeekchain's history. Walk through it.", type: "website" },
   twitter: { card: "summary_large_image" },
+  // Squeekchain's builder programme checks for this tag, and rechecks it daily. Keep it.
+  other: { "squeekchain-project": "7d5e617b-3cae-401b-8987-2aab281a8e1b" },
 };
 
 export const viewport: Viewport = { themeColor: "#0b0b0d", width: "device-width", initialScale: 1 };
